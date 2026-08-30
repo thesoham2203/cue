@@ -12,8 +12,9 @@ native/systemaudio
 # Logs
 *.log
 
-# macOS
-.DS_Store
+# OS cruft
+Thumbs.db
+Desktop.ini
 
 # User data / secrets — NEVER commit these
 cue-data.json        # contains API keys + personal interview prep

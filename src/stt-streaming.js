@@ -60,8 +60,8 @@ class OpenAIRealtimeSTT {
               input: {
                 format: { type: 'audio/pcm', rate: 24000 },
                 transcription: {
-                  model: this.model,
-                  language: 'en'
+                  model: this.model
+                  // No `language` → the transcription model auto-detects the spoken language.
                 }
               }
             }
@@ -241,7 +241,7 @@ class DeepgramStreamingSTT {
       const WebSocket = require('ws');
       const params = new URLSearchParams({
         model: this.model,
-        language: 'en',
+        language: 'multi', // nova-3 multilingual / code-switching; omitting this defaults to English
         smart_format: 'true',
         interim_results: 'true',
         utterance_end_ms: '1000',
@@ -379,8 +379,8 @@ async function transcribeBatchOpenAI(apiKey, wav, model) {
   const res = await client.audio.transcriptions.create({
     file,
     model: model || 'whisper-1',
-    response_format: 'text',
-    language: 'en'
+    response_format: 'text'
+    // No `language` → Whisper auto-detects per utterance.
   });
   return (typeof res === 'string' ? res : res.text || '').trim();
 }

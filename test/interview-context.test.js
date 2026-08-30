@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { buildResumeContext, parseResume } = require('../src/resume-context');
+const { buildResumeContext, parseResume } = require('../src/interview-context');
 const { buildInterviewContext, detectCategory } = require('../src/interview-context');
 
 // ── buildResumeContext (backward-compat shim) ─────────────────────────────────

@@ -4,12 +4,10 @@ const crypto = require('crypto');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { execFileSync } = require('child_process');
 const extractZip = require('extract-zip');
 const tar = require('tar');
 const {
   WHISPER_CPP_VERSION,
-  SOURCE_ARCHIVE_SHA256,
   getRuntimeTarget,
   getRuntimeExecutablePath
 } = require('../src/whisper-runtime-manifest');
@@ -80,7 +78,6 @@ function shouldCopyRuntimeEntry(filename, executableName) {
   return filename === executableName ||
     filename === 'LICENSE' ||
     filename.endsWith('.dll') ||
-    filename.endsWith('.dylib') ||
     filename.includes('.so');
 }
 
@@ -167,52 +164,6 @@ async function extractTarWithMaterializedLinks(archivePath, extractionDirectory)
   }
 }
 
-function runCMake(argumentsList, workingDirectory) {
-  execFileSync('cmake', argumentsList, {
-    cwd: workingDirectory,
-    env: process.env,
-    stdio: 'inherit',
-    windowsHide: true
-  });
-}
-
-async function prepareMacTarget(target, temporaryDirectory, destinationDirectory) {
-  if (process.platform !== 'darwin') {
-    throw new Error(`The ${target.key} runtime must be compiled on macOS.`);
-  }
-
-  const sourceArchivePath = path.join(temporaryDirectory, `whisper.cpp-${WHISPER_CPP_VERSION}.zip`);
-  const sourceExtractionDirectory = path.join(temporaryDirectory, 'source');
-  const buildDirectory = path.join(temporaryDirectory, 'build');
-  await fs.promises.mkdir(sourceExtractionDirectory, { recursive: true });
-  await downloadArtifact(target.url, sourceArchivePath, null, SOURCE_ARCHIVE_SHA256);
-  await extractZip(sourceArchivePath, { dir: sourceExtractionDirectory });
-  const sourceDirectory = path.dirname(await findFile(sourceExtractionDirectory, 'CMakeLists.txt'));
-
-  runCMake([
-    '-S', sourceDirectory,
-    '-B', buildDirectory,
-    '-DCMAKE_BUILD_TYPE=Release',
-    `-DCMAKE_OSX_ARCHITECTURES=${target.sourceArchitecture}`,
-    '-DCMAKE_OSX_DEPLOYMENT_TARGET=11.0',
-    '-DBUILD_SHARED_LIBS=OFF',
-    '-DGGML_NATIVE=OFF',
-    '-DWHISPER_BUILD_TESTS=OFF',
-    '-DWHISPER_BUILD_EXAMPLES=ON',
-    '-DWHISPER_BUILD_SERVER=ON',
-    '-DWHISPER_BUILD_TOOLS=OFF'
-  ], temporaryDirectory);
-  runCMake([
-    '--build', buildDirectory,
-    '--config', 'Release',
-    '--target', 'whisper-server',
-    '--parallel', String(Math.max(1, Math.min(os.cpus().length, 6)))
-  ], temporaryDirectory);
-
-  const executablePath = await findFile(buildDirectory, target.executable);
-  await copyRuntimeDependencies(path.dirname(executablePath), target.executable, destinationDirectory);
-}
-
 async function hasCurrentRuntime(runtimeDirectory, target) {
   const executablePath = getRuntimeExecutablePath(runtimeDirectory, target.key.split('-')[0], target.key.split('-').slice(1).join('-'));
   try {
@@ -245,11 +196,7 @@ async function prepareWhisperRuntime({
     const temporaryDirectory = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'cue-whisper-runtime-'));
     const preparedDirectory = path.join(temporaryDirectory, 'prepared');
     try {
-      if (target.kind === 'archive') {
-        await prepareArchiveTarget(target, temporaryDirectory, preparedDirectory);
-      } else {
-        await prepareMacTarget(target, temporaryDirectory, preparedDirectory);
-      }
+      await prepareArchiveTarget(target, temporaryDirectory, preparedDirectory);
       await fs.promises.writeFile(path.join(preparedDirectory, RUNTIME_MANIFEST_FILENAME), JSON.stringify({
         name: 'whisper.cpp',
         version: WHISPER_CPP_VERSION,

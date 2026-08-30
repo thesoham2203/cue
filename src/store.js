@@ -18,6 +18,11 @@ const DEFAULTS = {
     language: 'auto',
     threads: 0
   },
+  // Audio device selection. Empty string = follow the OS default. micDeviceId is
+  // fed to getUserMedia (the voice cue hears); speakerDeviceId is the output the
+  // in-app audio test plays back through (setSinkId).
+  micDeviceId: '',
+  speakerDeviceId: '',
   smart: false,
   baseUrl: '',
   minimaxRegion: 'global_en',
@@ -39,6 +44,9 @@ const DEFAULTS = {
   // points", "casual tone". Applied to every LLM mode EXCEPT LeetCode (kept
   // strict for coding problems).
   aiRules: '',
+  // Global keyboard shortcut overrides, keyed by action id (see src/shortcuts.js).
+  // Empty by default — every action falls back to its built-in accelerator.
+  shortcuts: {},
   // Window position
   windowX: null,
   windowY: null,
@@ -91,6 +99,12 @@ module.exports = {
   setSettings(patch) {
     load();
     const nextSettings = deepMerge(data, patch || {});
+    // `shortcuts` is an override map where an absent key means "use the default".
+    // deepMerge never deletes keys, so a deep merge would make cleared rebinds
+    // (and "Reset to defaults") sticky. Replace it wholesale instead.
+    if (patch && Object.prototype.hasOwnProperty.call(patch, 'shortcuts')) {
+      nextSettings.shortcuts = { ...(patch.shortcuts || {}) };
+    }
     nextSettings.baseUrl = normalizeBaseUrl(nextSettings.baseUrl);
     data = nextSettings;
     save();

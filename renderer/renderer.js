@@ -4,12 +4,13 @@
   const cue = window.cue; // exposed by preload
   const $ = (s) => document.querySelector(s);
   const isWindows = cue.platform === 'win32';
-  const isMac = cue.platform === 'darwin';
 
   // ---- paint icons -------------------------------------------------------
   $('#logo-btn').innerHTML = icon('logo', { size: 18 });
   $('.tb-hide .chev').innerHTML = icon('chevron-down', { size: 14 });
   $('#stop-btn').innerHTML = icon('stop-square', { size: 15 });
+  const tbMicBtn = $('#tb-mic-btn');
+  if (tbMicBtn) tbMicBtn.innerHTML = icon('mic', { size: 14 });
   $('#quit-btn').innerHTML = icon('x', { size: 14 });
   document.querySelector('.act[data-mode="assist"] .ic').innerHTML = icon('sparkles', { size: 16 });
   document.querySelector('.act[data-mode="say"] .ic').innerHTML = icon('wand-sparkles', { size: 16 });
@@ -421,7 +422,7 @@
     
     // FIX #10: Show undo hint when explicitly cleared
     if (showUndoHint && hadContent) {
-      const undoHint = isWindows ? 'Ctrl+Z to undo' : '⌘Z to undo';
+      const undoHint = 'Ctrl+Z to undo';
       showToast(`Cleared · ${undoHint}`, 2000);
     }
   }
@@ -538,7 +539,7 @@
   // FIX #4: Add tooltip with keyboard shortcuts to send button
   const sendBtn = document.getElementById('send-btn');
   if (sendBtn) {
-    const forceKey = isWindows ? 'Ctrl+Shift+A' : '⌘⇧A';
+    const forceKey = 'Ctrl+Shift+A';
     sendBtn.title = `Send · ${forceKey} to force answer`;
   }
 
@@ -558,6 +559,11 @@
   }
   $('#hide-btn').addEventListener('click', toggleHide);
   cue.on('hide:toggle', toggleHide);
+
+  // Close / quit. The window is frameless, so this ✕ is the only pointer path to
+  // quit cue (the Ctrl+Shift+X global shortcut is the other). Without this the
+  // button rendered but did nothing.
+  $('#quit-btn').addEventListener('click', () => cue.quit());
 
   // Stop = start/stop listening. Kick off system-audio capture straight from the click so
   // the user-gesture is fresh for getDisplayMedia (loopback capture needs it).
@@ -592,25 +598,32 @@
       clearTranscriptSidebar(); // clear the history sidebar too
       hardClearSTTFill(); // clear the input box too
       
-      const undoHint = isWindows ? 'Ctrl+Z to undo' : '⌘Z to undo';
+      const undoHint = 'Ctrl+Z to undo';
       showToast(`Transcript cleared · ${undoHint}`, 3500);
     });
   }
 
   // ---- capture: mic (renderer side) — uses AudioWorklet (modern, off-main-thread) ----
-  let audioCtx = null, micStream = null, micWorklet = null;
+  let audioCtx = null, micStream = null, micWorklet = null, micStarting = false;
   async function startMic() {
-    if (micStream) return;
+    // getUserMedia is async, so `if (micStream) return` alone loses the race when
+    // startMic fires twice in quick succession (e.g. capture:state + a device
+    // change) and spins up two AudioContexts that fight over addModule('...').
+    if (micStream || micStarting) return;
+    micStarting = true;
     try {
-      micStream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true,
-          channelCount: 1,
-          sampleRate: 16000
-        }
-      });
+      const wantId = (settings && settings.micDeviceId) || '';
+      const audioConstraints = {
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true,
+        channelCount: 1,
+        sampleRate: 16000
+      };
+      // `ideal` (not `exact`): if the saved device was unplugged, fall back to the
+      // default input instead of throwing NotFoundError and capturing nothing.
+      if (wantId) audioConstraints.deviceId = { ideal: wantId };
+      micStream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints });
       // getUserMedia can resolve with a stream that has no usable audio track
       // (e.g. a virtual/placeholder device, or a device that was unplugged
       // between permission grant and capture start). Fail loudly here instead
@@ -625,6 +638,7 @@
       }
       cue.log('mic stream started: track=' + (track.label || '(no label — permission may be stale)') + ' muted=' + track.muted);
       audioCtx = new AudioContext({ sampleRate: 16000 });
+      cue.log('mic AudioContext sampleRate=' + audioCtx.sampleRate);
 
       // Use AudioWorklet for low-latency, off-main-thread processing
       try {
@@ -663,14 +677,14 @@
       if (name === 'NotFoundError' || name === 'DevicesNotFoundError') {
         showStatus('No microphone was found. Plug one in, or pick a default input device in your OS sound settings, then try again.');
       } else if (name === 'NotAllowedError' || name === 'PermissionDeniedError' || name === 'SecurityError') {
-        showStatus(isWindows
-          ? 'Microphone permission was denied. Settings → Privacy & security → Microphone → allow cue, then try again.'
-          : 'Microphone permission was denied. System Settings → Privacy & Security → Microphone → allow cue, then try again.');
+        showStatus('Microphone permission was denied. Settings → Privacy & security → Microphone → allow cue, then try again.');
       } else if (name === 'NotReadableError' || name === 'TrackStartError') {
         showStatus('The microphone could not be started — another application may be using it exclusively. Close other apps using the mic and try again.');
       } else {
         showStatus('Microphone capture could not be started. Check your mic permissions and try again.');
       }
+    } finally {
+      micStarting = false;
     }
   }
   function stopMic() {
@@ -694,12 +708,12 @@
     // capture:state handler. getDisplayMedia is async, so `if (sysStream) return` alone loses the
     // race and can open a second loopback stream that is then orphaned.
     if (sysStream || sysStarting) return;
-    sysStarting = true;
     if (!navigator.mediaDevices || typeof navigator.mediaDevices.getDisplayMedia !== 'function') {
       cue.log('system audio unavailable: getDisplayMedia not supported');
       showStatus('Meeting audio capture is not available on this device build.');
       return;
     }
+    sysStarting = true;
     try {
       const stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
 
@@ -708,13 +722,12 @@
       if (!tracks.length) {
         cue.log('system audio: no loopback track on this platform');
         stream.getTracks().forEach((t) => t.stop());
-        showStatus(cue.platform === 'win32'
-          ? 'No system-audio loopback track detected. Make sure "Share audio" is checked in the screen share dialog, and that your audio device is not in exclusive mode.'
-          : 'No system-audio loopback track detected. Meeting audio needs macOS 14.4+ — your screen and microphone still work.');
+        showStatus('No system-audio loopback track detected. Make sure "Share audio" is checked in the screen share dialog, and that your audio device is not in exclusive mode.');
         return;
       }
       sysStream = stream;
       sysCtx = new AudioContext({ sampleRate: 16000 });
+      cue.log('system AudioContext sampleRate=' + sysCtx.sampleRate);
 
       // Use AudioWorklet for system audio too
       try {
@@ -761,6 +774,109 @@
     }
     if (sysCtx) { sysCtx.close(); sysCtx = null; }
     if (sysStream) { sysStream.getTracks().forEach((t) => t.stop()); sysStream = null; }
+  }
+
+  // ---- audio device selection + pre-meeting test -------------------------
+  // Fill one <select> with the devices of a given kind, keeping a "System
+  // default" option first and preserving the saved choice if it still exists.
+  function populateDeviceSelect(sel, devices, kind, savedId, labelBase) {
+    if (!sel) return;
+    const list = devices.filter((d) => d.kind === kind);
+    sel.innerHTML = '';
+    const def = document.createElement('option');
+    def.value = '';
+    def.textContent = 'System default';
+    sel.appendChild(def);
+    list.forEach((d, i) => {
+      const opt = document.createElement('option');
+      opt.value = d.deviceId;
+      // Labels are blank until mic permission is granted — fall back to a number.
+      opt.textContent = d.label || `${labelBase} ${i + 1}`;
+      sel.appendChild(opt);
+    });
+    sel.value = list.some((d) => d.deviceId === savedId) ? savedId : '';
+  }
+
+  async function refreshAudioDevices() {
+    const micSel = document.getElementById('mic-device');
+    const spkSel = document.getElementById('speaker-device');
+    const tbMicSel = document.getElementById('tb-mic-select');
+    if (!micSel && !spkSel && !tbMicSel) return;
+    if (!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) return;
+    let devices = [];
+    try { devices = await navigator.mediaDevices.enumerateDevices(); } catch (_) { return; }
+    populateDeviceSelect(micSel, devices, 'audioinput', (settings && settings.micDeviceId) || '', 'Microphone');
+    populateDeviceSelect(spkSel, devices, 'audiooutput', (settings && settings.speakerDeviceId) || '', 'Speaker');
+    populateDeviceSelect(tbMicSel, devices, 'audioinput', (settings && settings.micDeviceId) || '', 'Microphone');
+  }
+
+  // A short, self-contained check that both chosen devices work: a tone on the
+  // speaker + a live level bar for the mic. Uses its own AudioContext/stream so
+  // it never touches the capture pipeline, and always tears itself down.
+  let audioTest = null;
+  async function runAudioTest() {
+    if (audioTest) { stopAudioTest(); return; }
+    const btn = document.getElementById('audio-test-btn');
+    const meterFill = document.getElementById('mic-meter-fill');
+    const micId = (document.getElementById('mic-device') || {}).value || '';
+    const spkId = (document.getElementById('speaker-device') || {}).value || '';
+    let ctx = null, micStreamT = null, raf = 0;
+    try {
+      ctx = new AudioContext();
+      // Route this context's output to the chosen speaker where supported.
+      if (spkId && typeof ctx.setSinkId === 'function') {
+        try { await ctx.setSinkId(spkId); } catch (_) { /* fall back to default sink */ }
+      }
+      // A brief, gentle tone confirms the speaker.
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.value = 440;
+      gain.gain.value = 0.0001;
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      const t0 = ctx.currentTime;
+      gain.gain.exponentialRampToValueAtTime(0.18, t0 + 0.05);
+      gain.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.55);
+      osc.start(t0);
+      osc.stop(t0 + 0.6);
+      // Live mic meter from the chosen input.
+      micStreamT = await navigator.mediaDevices.getUserMedia({ audio: micId ? { deviceId: { ideal: micId } } : true });
+      const analyser = ctx.createAnalyser();
+      analyser.fftSize = 512;
+      ctx.createMediaStreamSource(micStreamT).connect(analyser);
+      const buf = new Uint8Array(analyser.frequencyBinCount);
+      const tick = () => {
+        analyser.getByteTimeDomainData(buf);
+        let peak = 0;
+        for (let i = 0; i < buf.length; i++) { const v = Math.abs(buf[i] - 128); if (v > peak) peak = v; }
+        if (meterFill) meterFill.style.width = Math.min(100, Math.round((peak / 128) * 140)) + '%';
+        raf = requestAnimationFrame(tick);
+      };
+      tick();
+      if (btn) { btn.textContent = 'Stop'; btn.classList.add('on'); }
+      audioTest = {
+        timer: setTimeout(() => stopAudioTest(), 6000), // never hold the mic open indefinitely
+        stop: () => {
+          cancelAnimationFrame(raf);
+          try { micStreamT.getTracks().forEach((tr) => tr.stop()); } catch (_) { /* already stopped */ }
+          try { ctx.close(); } catch (_) { /* already closed */ }
+          if (meterFill) meterFill.style.width = '0%';
+          if (btn) { btn.textContent = 'Test'; btn.classList.remove('on'); }
+        }
+      };
+    } catch (err) {
+      if (ctx) { try { ctx.close(); } catch (_) { /* ignore */ } }
+      if (micStreamT) { try { micStreamT.getTracks().forEach((tr) => tr.stop()); } catch (_) { /* ignore */ } }
+      if (meterFill) meterFill.style.width = '0%';
+      showStatus('Audio test could not open the selected devices: ' + (err && err.message ? err.message : String(err)));
+    }
+  }
+  function stopAudioTest() {
+    if (!audioTest) return;
+    clearTimeout(audioTest.timer);
+    audioTest.stop();
+    audioTest = null;
   }
 
   // ---- STT / VAD status helpers ------------------------------------------
@@ -953,8 +1069,10 @@
       }
       // Don't auto-close sidebar — let user keep it open if they want
     }
-    updateSttStatus({ active, streaming });
-    if (active) { startMic(); } else { stopMic(); stopSystemAudio(); }
+    // Local mode shows its own 'local' badge; every other mode reflects the live
+    // streaming state. This block ran twice before — a merge artifact that also
+    // double-called startMic(), which is what produced the duplicate
+    // "mic stream started" logs and raced two AudioContexts onto the worklet.
     if (active && mode === 'local') {
       sttState = 'local';
       const label = document.getElementById('stt-status');
@@ -1201,16 +1319,14 @@
     banner.innerHTML =
       '<div class="mic-perm-text">' +
         '<strong>🎙️ Microphone access required</strong><br>' +
-        'cue needs microphone permission to hear you during calls. Grant access in System Settings, then restart cue.' +
+        'cue needs microphone permission to hear you during calls. Allow it in Windows Settings → Privacy &amp; security → Microphone, then restart cue.' +
       '</div>' +
       '<div class="mic-perm-actions"></div>';
     const actions = banner.querySelector('.mic-perm-actions');
-    if (cue.platform === 'darwin') {
-      const openBtn = document.createElement('button');
-      openBtn.textContent = 'Open Microphone Settings';
-      openBtn.addEventListener('click', () => cue.openPane('x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone'));
-      actions.appendChild(openBtn);
-    }
+    const openBtn = document.createElement('button');
+    openBtn.textContent = 'Open Microphone Settings';
+    openBtn.addEventListener('click', () => cue.openPane('ms-settings:privacy-microphone'));
+    actions.appendChild(openBtn);
     const dismissBtn = document.createElement('button');
     dismissBtn.textContent = 'Dismiss';
     dismissBtn.className = 'dismiss';
@@ -1222,16 +1338,16 @@
 
   // ---- settings ----------------------------------------------------------
   const scrim = $('#settings-scrim');
-  function openSettings() { fillSettings(); scrim.classList.remove('hidden'); }
-  async function closeSettings() {
-    if (await saveSettings()) scrim.classList.add('hidden');
-  }
   function openSettings() {
     fillSettings();
     scrim.classList.remove('hidden');
     refreshWhisperModels();
+    void refreshAudioDevices();
   }
-  function closeSettings() { saveSettings(); scrim.classList.add('hidden'); }
+  async function closeSettings() {
+    stopAudioTest();
+    if (await saveSettings()) scrim.classList.add('hidden');
+  }
   $('#more-btn').addEventListener('click', openSettings);
   $('#s-close').addEventListener('click', () => { void closeSettings(); });
   scrim.addEventListener('click', (e) => { if (e.target === scrim) void closeSettings(); });
@@ -1248,6 +1364,137 @@
       if (pane) pane.classList.remove('hidden');
     });
   });
+
+  // ---- keyboard shortcuts (Settings → Shortcuts) -------------------------
+  const shortcutDefaults = (cue.shortcuts && cue.shortcuts.defaults()) || {};
+  let shortcutOverrides = {};   // action id -> accelerator (only non-defaults kept)
+  let recordingAction = null;   // action currently capturing keys, or null
+
+  const shortcutLabel = (accel) => (cue.shortcuts && cue.shortcuts.label(accel)) || accel || '';
+  const currentShortcutMap = () => ({ ...shortcutDefaults, ...shortcutOverrides });
+
+  // Browser KeyboardEvent.code -> Electron accelerator key token.
+  const SC_CODE_MAP = {
+    Enter: 'Return', NumpadEnter: 'Return', Space: 'Space',
+    ArrowUp: 'Up', ArrowDown: 'Down', ArrowLeft: 'Left', ArrowRight: 'Right',
+    Backslash: '\\', Slash: '/', Period: '.', Comma: ',', Semicolon: ';',
+    Quote: "'", BracketLeft: '[', BracketRight: ']', Minus: '-', Equal: '=',
+    Backquote: '`', Tab: 'Tab', Home: 'Home', End: 'End', PageUp: 'PageUp',
+    PageDown: 'PageDown', Insert: 'Insert', Delete: 'Delete'
+  };
+  function normalizeKeyCode(code) {
+    if (!code) return null;
+    if (/^Key[A-Z]$/.test(code)) return code.slice(3);          // KeyA -> A
+    if (/^Digit[0-9]$/.test(code)) return code.slice(5);        // Digit1 -> 1
+    if (/^Numpad[0-9]$/.test(code)) return 'num' + code.slice(6);
+    if (/^F[0-9]{1,2}$/.test(code)) return code;                // F1..F24
+    return SC_CODE_MAP[code] || null;                           // modifier-only -> null
+  }
+  function eventToAccelerator(e) {
+    const mods = [];
+    if (e.ctrlKey) mods.push('CommandOrControl');
+    if (e.altKey) mods.push('Alt');
+    if (e.shiftKey) mods.push('Shift');
+    const key = normalizeKeyCode(e.code);
+    if (!key) return null;
+    // A modifier-less global shortcut would hijack the key everywhere; only allow
+    // bare function keys, the conventional exception.
+    if (mods.length === 0 && !/^F[0-9]{1,2}$/.test(key)) return null;
+    return [...mods, key].join('+');
+  }
+
+  function renderShortcutRows() {
+    const list = $('#shortcut-list');
+    if (!list || !cue.shortcuts) return;
+    const map = currentShortcutMap();
+    const conflicting = new Set();
+    cue.shortcuts.conflicts(map).forEach(([a, b]) => { conflicting.add(a); conflicting.add(b); });
+    list.innerHTML = '';
+    for (const action of cue.shortcuts.actions()) {
+      const row = document.createElement('div');
+      row.className = 'sc-row';
+      const info = document.createElement('div');
+      info.className = 'sc-info';
+      const name = document.createElement('span');
+      name.className = 'sc-name';
+      name.textContent = action.label;
+      const desc = document.createElement('span');
+      desc.className = 'sc-desc';
+      desc.textContent = action.hint;
+      info.append(name, desc);
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'sc-key';
+      if (conflicting.has(action.id)) btn.classList.add('conflict');
+      if (recordingAction === action.id) {
+        btn.classList.add('recording');
+        btn.textContent = 'Press keys…';
+      } else {
+        btn.textContent = shortcutLabel(map[action.id]);
+      }
+      btn.title = map[action.id] || '';
+      btn.addEventListener('click', () => startRecording(action.id));
+      row.append(info, btn);
+      list.appendChild(row);
+    }
+    const status = $('#shortcut-status');
+    if (status) {
+      status.textContent = conflicting.size
+        ? 'Two actions share a shortcut — one of them won’t work until you change it.'
+        : '';
+    }
+  }
+
+  function startRecording(action) {
+    stopRecording();
+    recordingAction = action;
+    renderShortcutRows();
+    document.addEventListener('keydown', onRecordKey, true);
+  }
+  function stopRecording() {
+    if (!recordingAction) return;
+    recordingAction = null;
+    document.removeEventListener('keydown', onRecordKey, true);
+  }
+  function onRecordKey(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    const action = recordingAction;
+    if (e.code === 'Escape') { stopRecording(); renderShortcutRows(); return; }
+    if (e.code === 'Backspace' || e.code === 'Delete') {
+      delete shortcutOverrides[action];   // back to default
+      stopRecording();
+      renderShortcutRows();
+      return;
+    }
+    const accel = eventToAccelerator(e);
+    if (!accel) return;   // only modifiers so far — keep listening
+    if (accel === shortcutDefaults[action]) delete shortcutOverrides[action];
+    else shortcutOverrides[action] = accel;
+    stopRecording();
+    renderShortcutRows();
+  }
+
+  function fillShortcuts() {
+    shortcutOverrides = { ...(settings.shortcuts || {}) };
+    stopRecording();
+    renderShortcutRows();
+  }
+  function collectShortcuts() {
+    const ov = {};
+    for (const [k, v] of Object.entries(shortcutOverrides)) {
+      if (v && v !== shortcutDefaults[k]) ov[k] = v;
+    }
+    settings.shortcuts = ov;
+  }
+  function refreshActionHints() {
+    const map = { ...shortcutDefaults, ...((settings && settings.shortcuts) || {}) };
+    const sayEl = document.getElementById('say-shortcut-hint');
+    const assistEl = document.getElementById('assist-shortcut-hint');
+    if (sayEl) sayEl.textContent = shortcutLabel(map.say);
+    if (assistEl) assistEl.textContent = shortcutLabel(map.assist);
+  }
+  { const rb = $('#shortcut-reset'); if (rb) rb.addEventListener('click', () => { shortcutOverrides = {}; renderShortcutRows(); }); }
 
   function updateCustomProviderFields() {
     $('#custom-endpoint-settings').classList.toggle('hidden', settings.provider !== 'custom');
@@ -1280,6 +1527,14 @@
     const localWhisper = settings.localWhisper || { modelId: 'base.en', language: 'auto', threads: 0 };
     $('#whisper-language').value = localWhisper.language || 'auto';
     $('#whisper-threads').value = Number(localWhisper.threads) || 0;
+    // Audio devices — the option lists are (re)built by refreshAudioDevices();
+    // here we just restore the saved selection (a no-op until options exist).
+    const micDeviceEl = document.getElementById('mic-device');
+    const speakerDeviceEl = document.getElementById('speaker-device');
+    const tbMicDeviceSel = document.getElementById('tb-mic-select');
+    if (micDeviceEl) micDeviceEl.value = settings.micDeviceId || '';
+    if (speakerDeviceEl) speakerDeviceEl.value = settings.speakerDeviceId || '';
+    if (tbMicDeviceSel) tbMicDeviceSel.value = settings.micDeviceId || '';
     // Profile tab
     $('#resume-text').value = settings.resumeText || '';
     $('#job-description').value = settings.jobDescription || '';
@@ -1294,6 +1549,8 @@
     // Q&A tab
     $('#salary-target').value = settings.salaryTarget || '';
     $('#questions-to-ask').value = settings.questionsToAsk || '';
+    // Shortcuts tab
+    fillShortcuts();
   }
 
   // Whoever cue has been told it may answer questions for. Empty is the normal
@@ -1388,6 +1645,45 @@
     });
     $('#s-status').textContent = statusText();
   }));
+
+  // Audio-device selectors + the pre-meeting test button.
+  const micDeviceSel = document.getElementById('mic-device');
+  const speakerDeviceSel = document.getElementById('speaker-device');
+  const tbMicDeviceSel = document.getElementById('tb-mic-select');
+
+  if (micDeviceSel) micDeviceSel.addEventListener('change', () => {
+    const newId = micDeviceSel.value || '';
+    if (settings) settings.micDeviceId = newId;
+    if (tbMicDeviceSel) tbMicDeviceSel.value = newId;
+    // Apply immediately if capture is already running so the switch takes effect
+    // without a stop/start cycle.
+    if (micStream) { stopMic(); void startMic(); }
+  });
+
+  if (tbMicDeviceSel) tbMicDeviceSel.addEventListener('change', async () => {
+    const newId = tbMicDeviceSel.value || '';
+    if (settings) settings.micDeviceId = newId;
+    if (micDeviceSel) micDeviceSel.value = newId;
+    
+    try {
+      settings = await cue.settingsSet(settings);
+    } catch (err) {
+      cue.log('Error saving mic setting from toolbar: ' + err.message);
+    }
+    
+    if (micStream) { stopMic(); void startMic(); }
+    showToast('Microphone updated', 1500);
+  });
+
+  if (speakerDeviceSel) speakerDeviceSel.addEventListener('change', () => {
+    if (settings) settings.speakerDeviceId = speakerDeviceSel.value || '';
+  });
+  const audioTestBtn = document.getElementById('audio-test-btn');
+  if (audioTestBtn) audioTestBtn.addEventListener('click', () => { void runAudioTest(); });
+  // Rebuild the lists when a device is plugged in or removed while open.
+  if (navigator.mediaDevices && typeof navigator.mediaDevices.addEventListener === 'function') {
+    navigator.mediaDevices.addEventListener('devicechange', () => { void refreshAudioDevices(); });
+  }
 
   function formatBytes(bytes) {
     if (!Number.isFinite(bytes) || bytes <= 0) return '0 MB';
@@ -1530,6 +1826,7 @@
   cue.on('whisper:models-changed', () => refreshWhisperModels());
 
   async function saveSettings() {
+    stopRecording();   // detach the key-capture listener if a rebind was in progress
     // Keys
     settings.apiKeys.openai = $('#key-openai').value.trim();
     settings.apiKeys.anthropic = $('#key-anthropic').value.trim();
@@ -1550,6 +1847,11 @@
     settings.localWhisper.modelId = $('#whisper-model').value || settings.localWhisper.modelId || 'base.en';
     settings.localWhisper.language = $('#whisper-language').value || 'auto';
     settings.localWhisper.threads = Math.max(0, Math.min(64, Number.parseInt($('#whisper-threads').value, 10) || 0));
+    // Audio devices
+    const micDeviceEl = document.getElementById('mic-device');
+    const speakerDeviceEl = document.getElementById('speaker-device');
+    if (micDeviceEl) settings.micDeviceId = micDeviceEl.value || '';
+    if (speakerDeviceEl) settings.speakerDeviceId = speakerDeviceEl.value || '';
     // Profile
     settings.resumeText = $('#resume-text').value.trim();
     settings.jobDescription = $('#job-description').value.trim();
@@ -1563,11 +1865,14 @@
     // Q&A
     settings.salaryTarget = $('#salary-target').value.trim();
     settings.questionsToAsk = $('#questions-to-ask').value.trim();
+    // Shortcuts
+    collectShortcuts();
     try {
       settings = await cue.settingsSet(settings);
       $('#s-status').textContent = statusText();
       updatePrepStatus();
       updateSmartTooltip();
+      refreshActionHints();
       return true;
     } catch (error) {
       const message = error && error.message ? error.message : String(error);
@@ -1604,10 +1909,11 @@
   setIgnore(true); // start fully click-through; hovering the panel re-enables it
 
   // ---- assistant access request ------------------------------------------
-  // Shown here rather than as a native dialog because cue hides its dock icon:
-  // an OS panel from an accessory app never comes forward and cannot be
-  // clicked. Note the scrim is registered in the click-through selector above
-  // and in styles.css — without both, this window stays transparent to the
+  // Shown here rather than as a native dialog because cue is a frameless,
+  // always-on-top overlay: a native OS panel would open outside the window's
+  // setContentProtection surface (so it shows up in screen shares) and detached
+  // from the overlay. Note the scrim is registered in the click-through selector
+  // above and in styles.css — without both, this window stays transparent to the
   // mouse and the buttons do nothing.
   const consentScrim = $('#consent-scrim');
   let pendingConsentId = null;
@@ -1642,21 +1948,14 @@
 
   // ---- onboarding / first-run tutorial -----------------------------------
   const obScrim = $('#onboard-scrim');
-  const permissionHelp = isWindows
-    ? 'cue needs permission to see and hear. Open Windows Privacy & security settings, allow <strong>Microphone</strong> and <strong>Screen recording</strong> for cue, then come back here.'
-    : 'cue needs two macOS permissions. Click each button, turn <strong>cue</strong> ON in the window that opens, then come back here.';
-  const permissionButtons = isWindows
-    ? [
-        { label: 'Open Microphone settings', action: () => cue.openPane('ms-settings:privacy-microphone') },
-        { label: 'Open Screen recording settings', action: () => cue.openPane('ms-settings:privacy-screenrecorder') }
-      ]
-    : [
-        { label: 'Open Microphone settings', action: () => cue.openPane('x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone') },
-        { label: 'Open Screen Recording settings', action: () => cue.openPane('x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture') }
-      ];
-  const assistShortcut = isWindows ? '<span class="kbd">Ctrl</span> <span class="kbd">↵</span>' : '<span class="kbd">⌘</span> <span class="kbd">↵</span>';
-  const solveShortcut = isWindows ? '<span class="kbd">Ctrl</span> <span class="kbd">H</span>' : '<span class="kbd">⌘</span> <span class="kbd">H</span>';
-  const quitShortcut = isWindows ? '<span class="kbd">Ctrl</span><span class="kbd">⇧</span><span class="kbd">X</span>' : '<span class="kbd">⌘</span><span class="kbd">⇧</span><span class="kbd">X</span>';
+  const permissionHelp = 'cue needs permission to see and hear. Open Windows Privacy &amp; security settings, allow <strong>Microphone</strong> and <strong>Screen recording</strong> for cue, then come back here.';
+  const permissionButtons = [
+    { label: 'Open Microphone settings', action: () => cue.openPane('ms-settings:privacy-microphone') },
+    { label: 'Open Screen recording settings', action: () => cue.openPane('ms-settings:privacy-screenrecorder') }
+  ];
+  const assistShortcut = '<span class="kbd">Ctrl</span> <span class="kbd">↵</span>';
+  const solveShortcut = '<span class="kbd">Ctrl</span> <span class="kbd">H</span>';
+  const quitShortcut = '<span class="kbd">Ctrl</span><span class="kbd">⇧</span><span class="kbd">X</span>';
   const OB_STEPS = [
     {
       icon: '👋',
@@ -1715,11 +2014,16 @@
     settings = await cue.settingsGet();
     const platformInfo = await cue.platformInfo();
 
-    // R4: shortcut hints
-    const sayHintEl = document.getElementById('say-shortcut-hint');
-    const assistHintEl = document.getElementById('assist-shortcut-hint');
-    if (sayHintEl) sayHintEl.textContent = isWindows ? 'Ctrl+Shift+↵' : '⌘⇧↵';
-    if (assistHintEl) assistHintEl.textContent = isWindows ? 'Ctrl+↵' : '⌘↵';
+    // R4: shortcut hints — driven by the configured accelerators so they follow
+    // any rebinding the user does in Settings → Shortcuts.
+    if (cue.shortcuts) {
+      refreshActionHints();
+    } else {
+      const sayHintEl = document.getElementById('say-shortcut-hint');
+      const assistHintEl = document.getElementById('assist-shortcut-hint');
+      if (sayHintEl) sayHintEl.textContent = 'Ctrl+Shift+↵';
+      if (assistHintEl) assistHintEl.textContent = 'Ctrl+↵';
+    }
 
     // R5: prep status
     updatePrepStatus();
@@ -1741,6 +2045,7 @@
     syncPlaceholder();
     updateHistoryBadge(); // FIX #3: Initialize badge on boot
     updateSendButtonState(); // Initialize send button state
+    void refreshAudioDevices();
 
     // Fix placeholder shortcut hint to match platform
     if (isWindows) {

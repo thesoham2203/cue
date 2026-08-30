@@ -2,14 +2,11 @@ const path = require('path');
 
 const WHISPER_CPP_VERSION = '1.9.1';
 const RELEASE_BASE_URL = `https://github.com/ggml-org/whisper.cpp/releases/download/v${WHISPER_CPP_VERSION}`;
-const SOURCE_ARCHIVE_URL = `https://github.com/ggml-org/whisper.cpp/archive/refs/tags/v${WHISPER_CPP_VERSION}.zip`;
-// NOTE: this pins a GitHub auto-generated source archive, which is not
-// byte-stable — GitHub may recompress it, invalidating the hash without any
-// upstream release change. If the macOS source build starts failing with
-// "Artifact checksum verification failed", that is why. The Windows/Linux
-// targets use release assets instead and do not have this problem.
-const SOURCE_ARCHIVE_SHA256 = 'e684d836a67616c0d51c9239245a46ee6a7203258b2b3354e456af5039482d13';
 
+// Every runtime target uses a pinned upstream *release asset* with a stable
+// checksum. Windows is what cue ships for; the Linux entries exist only so the
+// download/extract pipeline can be smoke-tested cheaply in CI on an Ubuntu
+// runner. There is deliberately no macOS entry — cue is Windows-only.
 const RUNTIME_TARGETS = Object.freeze({
   'win32-x64': Object.freeze({
     kind: 'archive',
@@ -34,16 +31,6 @@ const RUNTIME_TARGETS = Object.freeze({
     bytes: 4555819,
     sha256: 'e0b66cd551ff6f2a28fabe3c6e89691eea037bb76833493abb9a71ca788994b3',
     executable: 'whisper-server'
-  }),
-  'darwin-x64': Object.freeze({
-    kind: 'source',
-    sourceArchitecture: 'x86_64',
-    executable: 'whisper-server'
-  }),
-  'darwin-arm64': Object.freeze({
-    kind: 'source',
-    sourceArchitecture: 'arm64',
-    executable: 'whisper-server'
   })
 });
 
@@ -54,7 +41,7 @@ function getRuntimeTarget(platform = process.platform, architecture = process.ar
   return {
     ...target,
     key,
-    url: target.kind === 'archive' ? `${RELEASE_BASE_URL}/${target.filename}` : SOURCE_ARCHIVE_URL
+    url: `${RELEASE_BASE_URL}/${target.filename}`
   };
 }
 
@@ -65,8 +52,6 @@ function getRuntimeExecutablePath(runtimeDirectory, platform = process.platform,
 module.exports = {
   WHISPER_CPP_VERSION,
   RUNTIME_TARGETS,
-  SOURCE_ARCHIVE_URL,
-  SOURCE_ARCHIVE_SHA256,
   getRuntimeTarget,
   getRuntimeExecutablePath
 };

@@ -1,10 +1,20 @@
 const { contextBridge, ipcRenderer } = require('electron');
+const shortcuts = require('./src/shortcuts');
 const platform = process.platform;
 
 contextBridge.exposeInMainWorld('cue', {
   platform,
   settingsGet: () => ipcRenderer.invoke('settings:get'),
   settingsSet: (patch) => ipcRenderer.invoke('settings:set', patch),
+  // Keyboard-shortcut helpers. Pure functions over src/shortcuts.js so the
+  // settings UI and main process share one source of truth for defaults/labels.
+  shortcuts: {
+    defaults: () => ({ ...shortcuts.DEFAULTS }),
+    actions: () => shortcuts.ACTIONS.map((a) => ({ ...a })),
+    label: (accel) => shortcuts.acceleratorLabel(accel),
+    valid: (accel) => shortcuts.isValid(accel),
+    conflicts: (map) => shortcuts.findConflicts(map || {})
+  },
   whisperModels: () => ipcRenderer.invoke('whisper:models'),
   whisperModelDownload: (modelId) => ipcRenderer.invoke('whisper:model-download', modelId),
   whisperModelCancel: (modelId) => ipcRenderer.invoke('whisper:model-cancel', modelId),
@@ -27,9 +37,6 @@ contextBridge.exposeInMainWorld('cue', {
   appLinkConsentRespond: (id, allowed) => ipcRenderer.send('applink:consent-response', { id, allowed }),
   pickProfileDocument: () => ipcRenderer.invoke('profile:pickDocument'),
   quit: () => ipcRenderer.send('app:quit'),
-  permissionsCheck: () => ipcRenderer.invoke('permissions:check'),
-  permissionsRequest: () => ipcRenderer.invoke('permissions:request'),
-  permissionsContinue: () => ipcRenderer.send('permissions:continue'),
   log: (msg) => ipcRenderer.send('log', msg),
   on: (channel, cb) => {
     const allowed = ['capture:state', 'llm:start', 'llm:token', 'llm:done', 'llm:error', 'status', 'transcript', 'stt:interim', 'stt:final', 'stt:status', 'vad:state', 'applink:consent-request', 'hide:toggle', 'whisper:download-progress', 'whisper:models-changed'];

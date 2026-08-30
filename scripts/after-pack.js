@@ -5,12 +5,11 @@ const { prepareWhisperRuntime } = require('./prepare-whisper-runtime');
 /** Add the matching native runtime after Electron has assembled each target.
  *
  * Opt-in via CUE_BUNDLE_WHISPER=1. Preparing the runtime downloads a pinned
- * release on Windows/Linux and builds whisper.cpp from source with cmake on
- * macOS, so leaving it on by default would make every `npm run pack` and every
- * release build depend on the network and on a local toolchain — including the
- * signed macOS release, which has nothing to do with local transcription.
- * Local whisper is one optional speech-to-text provider among several; the app
- * runs fine without the bundled runtime and simply does not offer it.
+ * whisper.cpp release and verifies its checksum, so leaving it on by default
+ * would make every `npm run pack` and every release build depend on the
+ * network. Local whisper is one optional speech-to-text provider among
+ * several; the app runs fine without the bundled runtime and simply does not
+ * offer it.
  */
 module.exports = async function afterPack(context) {
   if (!process.env.CUE_BUNDLE_WHISPER) {

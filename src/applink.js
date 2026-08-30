@@ -25,15 +25,15 @@ const CONSENT_TIMEOUT_MS = 120_000;
 /**
  * Ask inside cue's own window.
  *
- * The first version of this used dialog.showMessageBox, and it was unusable:
- * cue calls app.dock.hide(), so it is an accessory application and never
- * becomes active on its own. The panel appeared and then would not take a
- * click, because the app it belonged to was not frontmost and nothing was
- * bringing it forward.
+ * The first version of this used dialog.showMessageBox, and it was wrong for
+ * this app: cue is a frameless, always-on-top overlay with no taskbar button,
+ * so a native OS dialog opens detached from the overlay and — crucially —
+ * outside the window's setContentProtection surface, which means it would be
+ * visible in a screen share. For a consent prompt that is exactly backwards.
  *
- * cue's own window has none of that problem, matches the rest of the app, and
- * carries setContentProtection — so a consent prompt does not show up in a
- * screen share, which for this particular prompt is the right default.
+ * cue's own window matches the rest of the app and stays under
+ * setContentProtection, so the prompt is invisible to screen capture, which
+ * for this particular prompt is the right default.
  */
 function askInWindow(win, copy, scope) {
   const id = `consent-${++consentSeq}`;

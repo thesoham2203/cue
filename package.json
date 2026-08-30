@@ -1,36 +1,34 @@
 {
   "name": "cue",
   "version": "0.2.2",
-  "description": "Open-source cross-platform invisible AI overlay — three separate inputs (screen, mic, system audio) into an LLM. A Cluely-style copilot for meetings and coding problems.",
+  "description": "Open-source invisible AI overlay for Windows — three separate inputs (screen, mic, system audio) into an LLM. A Cluely-style copilot for meetings and coding problems.",
   "license": "GPL-3.0-or-later",
   "author": "cue",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
     "test": "node --test test/*.test.js",
+    "lint": "eslint .",
     "postinstall": "node scripts/rename-electron.js",
     "prepare:whisper": "node scripts/prepare-whisper-runtime.js",
     "verify:whisper-runtime": "node scripts/verify-whisper-runtime.js",
     "pack": "electron-builder --dir",
-    "dist": "electron-builder --mac zip",
-    "dist:mac": "electron-builder --mac zip",
-    "dist:win": "electron-builder --win",
     "pack:win": "electron-builder --win --dir",
-    "dist:linux": "electron-builder --linux AppImage --x64",
-    "dist:linux:arm64": "electron-builder --linux AppImage --arm64"
+    "dist:win": "electron-builder --win"
   },
   "keywords": [
     "electron",
     "overlay",
     "ai",
     "assistant",
-    "windows",
-    "cross-platform"
+    "windows"
   ],
   "devDependencies": {
     "electron": "33.2.1",
     "electron-builder": "^26.15.3",
+    "eslint": "^10.9.0",
     "extract-zip": "^2.0.1",
+    "globals": "^17.11.0",
     "resedit": "^3.0.2",
     "tar": "^7.5.22"
   },

@@ -21,16 +21,16 @@ test('publishes all 30 official model choices with immutable integrity metadata'
   assert.throws(() => requireWhisperModel('../../outside'), /Unsupported Whisper model/);
 });
 
-test('defines runtime targets for Windows, Linux, and both macOS architectures', () => {
+test('defines runtime targets for Windows and Linux, and never for macOS', () => {
   assert.deepEqual(Object.keys(RUNTIME_TARGETS).sort(), [
-    'darwin-arm64',
-    'darwin-x64',
     'linux-arm64',
     'linux-x64',
     'win32-x64'
   ]);
   assert.equal(getRuntimeTarget('win32', 'x64').executable, 'whisper-server.exe');
-  assert.equal(getRuntimeTarget('darwin', 'arm64').kind, 'source');
+  assert.equal(getRuntimeTarget('linux', 'x64').kind, 'archive');
+  // cue is Windows-only; macOS is not a packaged runtime target.
+  assert.throws(() => getRuntimeTarget('darwin', 'arm64'), /not packaged/);
   assert.throws(() => getRuntimeTarget('win32', 'arm64'), /not packaged/);
 });
 

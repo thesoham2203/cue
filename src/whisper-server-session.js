@@ -202,8 +202,6 @@ class WhisperServerSession {
     const environment = { ...process.env };
     if (process.platform === 'win32') {
       environment.PATH = `${this.runtimeDirectory}${path.delimiter}${environment.PATH || ''}`;
-    } else if (process.platform === 'darwin') {
-      environment.DYLD_LIBRARY_PATH = `${this.runtimeDirectory}${path.delimiter}${environment.DYLD_LIBRARY_PATH || ''}`;
     } else {
       environment.LD_LIBRARY_PATH = `${this.runtimeDirectory}${path.delimiter}${environment.LD_LIBRARY_PATH || ''}`;
     }

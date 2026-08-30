@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert');
-const { DEFAULTS, resolveShortcuts, findConflicts, isValid } = require('../src/shortcuts');
+const { DEFAULTS, ACTIONS, resolveShortcuts, findConflicts, isValid, acceleratorLabel } = require('../src/shortcuts');
 
 test('defaults cover the core actions', () => {
   assert.strictEqual(DEFAULTS.assist, 'CommandOrControl+Return');
@@ -31,4 +31,29 @@ test('isValid accepts good accelerators and rejects junk', () => {
   assert.strictEqual(isValid(''), false);
   assert.strictEqual(isValid('++'), false);
   assert.strictEqual(isValid(null), false);
+});
+
+test('ACTIONS and DEFAULTS describe exactly the same set of actions', () => {
+  const actionIds = ACTIONS.map((a) => a.id).sort();
+  const defaultIds = Object.keys(DEFAULTS).sort();
+  assert.deepStrictEqual(actionIds, defaultIds);
+  // Every action carries a label + hint for the settings UI.
+  for (const a of ACTIONS) {
+    assert.ok(a.label && a.hint, `missing metadata for ${a.id}`);
+  }
+});
+
+test('every default accelerator is itself valid and conflict-free', () => {
+  for (const [id, accel] of Object.entries(DEFAULTS)) {
+    assert.ok(isValid(accel), `default for ${id} is invalid: ${accel}`);
+  }
+  assert.strictEqual(findConflicts(DEFAULTS).length, 0);
+});
+
+test('acceleratorLabel renders Windows modifier words and key glyphs', () => {
+  assert.strictEqual(acceleratorLabel('CommandOrControl+Shift+Return'), 'Ctrl+Shift+↵');
+  assert.strictEqual(acceleratorLabel('CommandOrControl+H'), 'Ctrl+H');
+  assert.strictEqual(acceleratorLabel('CommandOrControl+Alt+Shift+K'), 'Ctrl+Alt+Shift+K');
+  assert.strictEqual(acceleratorLabel('Alt+Left'), 'Alt+←');
+  assert.strictEqual(acceleratorLabel(''), '');
 });

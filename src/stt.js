@@ -38,7 +38,7 @@ async function transcribeOpenAI(apiKey, wav, model, baseURL, prompt) {
   const res = await client.audio.transcriptions.create({
     file,
     model: model || 'whisper-1',
-    language: 'en',
+    // No `language` → Whisper auto-detects per utterance (Hindi / Marathi / English / …).
     temperature: 0,
     prompt: prompt || ''
   });

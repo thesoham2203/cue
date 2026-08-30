@@ -20,7 +20,12 @@
       <div class="tb-divider"></div>
       <button class="tb-stop" id="stop-btn" title="Start / stop listening"></button>
       <div class="tb-divider"></div>
-      <button class="tb-quit" id="quit-btn" title="Quit cue (⌘⇧X)"></button>
+      <div class="tb-mic-select-container" id="tb-mic-select-container">
+        <button class="tb-mic" id="tb-mic-btn" title="Select mic input"></button>
+        <select class="tb-mic-select" id="tb-mic-select" title="Select microphone"></select>
+      </div>
+      <div class="tb-divider"></div>
+      <button class="tb-quit" id="quit-btn" title="Quit cue (Ctrl+Shift+X)"></button>
     </div>
 
     <!-- Main assistant panel -->
@@ -56,7 +61,7 @@
 
             <div id="composer">
               <div id="input-area">
-                <div id="placeholder">Ask about your screen or conversation, or <span class="keycap">⌘</span><span class="keycap">⏎</span> for Assist</div>
+                <div id="placeholder">Ask about your screen or conversation, or <span class="keycap">Ctrl</span><span class="keycap">⏎</span> for Assist</div>
                 <textarea id="input" rows="1" spellcheck="false"></textarea>
               </div>
               <div id="composer-bottom">
@@ -106,11 +111,12 @@
       <!-- Tab bar -->
       <div class="s-tabs">
         <button class="s-tab on" data-tab="keys">🔑 Keys</button>
-        <button class="s-tab" data-tab="transcription">Audio</button>
+        <button class="s-tab" data-tab="transcription">🎧 Audio</button>
         <button class="s-tab" data-tab="profile">📄 Profile</button>
         <button class="s-tab" data-tab="prep">🎯 Interview Prep</button>
         <button class="s-tab" data-tab="style">✨ Style</button>
         <button class="s-tab" data-tab="qa">💬 Q&amp;A</button>
+        <button class="s-tab" data-tab="shortcuts">⌨️ Shortcuts</button>
       </div>
 
       <!-- Tab: Keys -->
@@ -165,6 +171,17 @@
 
       <!-- Tab: Transcription -->
       <div class="s-body s-tab-pane hidden" data-pane="transcription">
+        <label class="s-label">Microphone <span class="s-hint">the input cue listens to for your voice</span></label>
+        <select id="mic-device" class="s-select"></select>
+
+        <label class="s-label">Speaker <span class="s-hint">where the audio test plays back</span></label>
+        <div class="s-field s-device-row">
+          <select id="speaker-device" class="s-select"></select>
+          <button id="audio-test-btn" class="s-action" type="button">Test</button>
+        </div>
+        <div class="mic-meter" id="mic-meter" title="Microphone level"><span class="mic-meter-fill" id="mic-meter-fill"></span></div>
+        <div class="s-note">Pick your devices, then <strong>Test</strong> to hear a tone on the speaker and watch your mic level. Meeting audio is always captured from the current Windows playback device.</div>
+
         <label class="s-label">Speech-to-text provider</label>
         <div class="s-seg s-seg-wrap" id="stt-provider-seg">
           <button data-stt-provider="auto">Auto</button>
@@ -243,9 +260,9 @@
       <!-- Tab: Q&A -->
       <div class="s-body s-tab-pane hidden" data-pane="qa">
         <label class="s-label">Salary target <span class="s-hint">used when asked about compensation</span></label>
-        <input id="salary-target" type="text" placeholder="e.g. $150k–$180k base + equity, open to discuss total comp" autocomplete="off" style="width:100%;padding:8px 10px;border-radius:8px;border:1px solid rgba(255,255,255,0.14);background:rgba(0,0,0,0.25);color:#fff;font-size:13px;font-family:inherit;outline:none;" />
+        <input id="salary-target" class="s-input" type="text" placeholder="e.g. $150k–$180k base + equity, open to discuss total comp" autocomplete="off" />
 
-        <label class="s-label" style="margin-top:14px;">Questions to ask the interviewer <span class="s-hint">cue will suggest these at the end</span></label>
+        <label class="s-label">Questions to ask the interviewer <span class="s-hint">cue will suggest these at the end</span></label>
         <textarea id="questions-to-ask" rows="6" spellcheck="false" placeholder="e.g.&#10;- What does success look like in the first 90 days?&#10;- How does the team handle technical debt?&#10;- What's the biggest challenge the team is facing right now?&#10;- How does feedback and mentorship work here?"></textarea>
       </div>
 
@@ -263,6 +280,17 @@
         <div class="s-hint-block">
           These rules tell cue <strong>how</strong> to write, not <strong>what</strong> to say. Use one imperative sentence per line (e.g. <em>Never use em-dashes.</em>). They apply to every mode except coding-problem solves (LeetCode), which stays strict. Stored locally; never sent anywhere except the AI provider when cue answers a question.
         </div>
+      </div>
+
+      <!-- Tab: Shortcuts -->
+      <div class="s-body s-tab-pane hidden" data-pane="shortcuts">
+        <label class="s-label">Global keyboard shortcuts <span class="s-hint">work anywhere, even when cue is hidden · click a shortcut, then press the new keys</span></label>
+        <div id="shortcut-list" class="sc-list"></div>
+        <div class="sc-foot">
+          <button id="shortcut-reset" class="s-action">Reset to defaults</button>
+          <span class="s-hint">Esc cancels · Backspace clears</span>
+        </div>
+        <div class="s-status" id="shortcut-status"></div>
       </div>
 
 
@@ -287,8 +315,9 @@
   </div>
 
   <!-- Assistant access request. Shown in-window rather than as a native dialog:
-       cue hides its dock icon, so an OS panel never comes forward and cannot be
-       clicked. -->
+       cue is a frameless, always-on-top overlay, so a native OS panel would open
+       outside its setContentProtection surface (visible in screen shares) and
+       detached from the overlay. -->
   <div id="consent-scrim" class="hidden">
     <div id="consent" class="glass">
       <div class="cs-title" id="cs-title"></div>
