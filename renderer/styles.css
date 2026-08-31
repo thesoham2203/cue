@@ -212,7 +212,7 @@ html, body {
 #panel.collapsed { display: none; }
 
 /* ============================ Messages ============================ */
-#messages { display: flex; flex-direction: column; overflow-y: auto; max-height: 50vh; }
+#messages { display: flex; flex-direction: column; overflow-y: auto; max-height: 65vh; }
 .user-bubble {
   align-self: flex-end;
   max-width: 75%;

@@ -330,7 +330,8 @@ function createLLM(settings) {
   }
 
   const ready = !configurationError && !!model;
-  const maxTokens = settings.smart ? 1400 : 700;
+  // Prevent response truncation by choosing a more standard token ceiling.
+  const maxTokens = settings.smart ? 6500 : 4096;
 
   return {
     provider, model, apiKey, baseURL,

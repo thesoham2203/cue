@@ -90,6 +90,9 @@
     } else {
       aiEl.appendChild(span);
     }
+    // Auto-scroll so streaming content stays visible — without this,
+    // content beyond the first screenful appears cut off to the user.
+    messages.scrollTop = messages.scrollHeight;
   }
 
   function finalizeAi() {
@@ -97,6 +100,8 @@
     const raw = aiEl.dataset.raw || '';
     aiEl.innerHTML = renderMarkdown(raw);
     aiEl = null; caretEl = null;
+    // Scroll to bottom after markdown is rendered (heights may change).
+    messages.scrollTop = messages.scrollHeight;
   }
 
   let busyFailsafe = null;
