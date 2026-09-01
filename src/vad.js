@@ -22,14 +22,17 @@ class AdaptiveVAD {
 
     // Adaptive noise floor
     this.noiseFloor = 80;
+    this.noiseFloorMin = 20;       // floor lower bound (keep sensitivity reasonable)
     this.noiseAdaptRate = 0.02;    // how fast noise floor adapts
     this.noiseMaxAdapt = 400;      // don't adapt above this
+    this.noiseCeiling = 300;      // upper bound: prevents runaway threshold in very noisy envs
 
     // State machine
     this.state = 'silence'; // 'silence' | 'speech' | 'trailing'
     this.speechFrameCount = 0;
     this.silenceFrameCount = 0;
     this.totalSpeechFrames = 0;
+    this._speechStartTime = null; // Date.now() captured at speech onset
 
     // Callbacks
     this.onSpeechStart = options.onSpeechStart || (() => {});
@@ -65,6 +68,9 @@ class AdaptiveVAD {
     if (this.state === 'silence') {
       if (energy < this.noiseMaxAdapt) {
         this.noiseFloor = this.noiseFloor * (1 - this.noiseAdaptRate) + energy * this.noiseAdaptRate;
+        // Clamp to prevent runaway adaptation in very noisy environments.
+        this.noiseFloor = Math.min(this.noiseFloor, this.noiseCeiling);
+        this.noiseFloor = Math.max(this.noiseFloor, this.noiseFloorMin);
       }
     }
 
@@ -79,6 +85,7 @@ class AdaptiveVAD {
       case 'silence':
         if (isSpeech) {
           this.speechFrameCount = 1;
+          this._speechStartTime = Date.now(); // capture speech onset timestamp
           this.state = 'speech';
           this.onSpeechStart();
           this.onVADState('speech');
@@ -135,6 +142,12 @@ class AdaptiveVAD {
     this.silenceFrameCount = 0;
     this.totalSpeechFrames = 0;
     this.noiseFloor = 80;
+    this._speechStartTime = null;
+  }
+
+  // Returns the timestamp captured at speech onset, or null if not currently in speech.
+  getSpeechStartTime() {
+    return this._speechStartTime;
   }
 }
 

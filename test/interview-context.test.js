@@ -115,7 +115,10 @@ test('buildInterviewContext: leetcode returns null', () => {
 
 test('buildInterviewContext: returns null with no settings data', () => {
   const empty = { resumeText: '', jobDescription: '', starStories: '', whyCompany: '', whyLeaving: '', workStyle: '', salaryTarget: '', questionsToAsk: '' };
-  assert.equal(buildInterviewContext(empty, 'say', [{ channel: 'them', text: 'Tell me about yourself.' }]), null);
+  // Even with empty settings, a non-empty transcript now produces a conversation-history block.
+  const ctx = buildInterviewContext(empty, 'say', [{ channel: 'them', text: 'Tell me about yourself.' }]);
+  assert.ok(ctx !== null, 'should return context when transcript is non-empty');
+  assert.ok(ctx.includes('Recent Conversation'), 'should include conversation history');
 });
 
 test('buildInterviewContext: JD tailor note included when JD is set', () => {

@@ -2,6 +2,20 @@ const { app, BrowserWindow, ipcMain, globalShortcut, screen, session, desktopCap
 const path = require('path');
 const os = require('os');
 const store = require('./src/store');
+
+// -------- global exception handlers (must be registered before anything else) --------
+process.on('uncaughtException', (err) => {
+  console.error('[cue] uncaughtException:', err && err.message ? err.message : String(err));
+  recordEvent({ level: 'fatal', event: 'uncaught_exception', msg: err && err.message ? err.message : String(err), stack: err && err.stack || null });
+  // Give the logger a moment to flush before exiting
+  setTimeout(() => process.exit(1), 500);
+});
+
+process.on('unhandledRejection', (reason) => {
+  console.error('[cue] unhandledRejection:', reason && (reason.message || reason.reason) ? (reason.message || reason.reason) : String(reason));
+  recordEvent({ level: 'error', event: 'unhandled_rejection', msg: reason && (reason.message || reason.reason) ? (reason.message || reason.reason) : String(reason) });
+});
+
 const { resolveShortcuts } = require('./src/shortcuts');
 const { captureScreenshot } = require('./src/screen');
 const { createSTT } = require('./src/stt');
@@ -38,11 +52,15 @@ function getWindowsBuild() {
 const WIN_BUILD = getWindowsBuild();
 const WIN_SUPPORTS_CONTENT_PROTECTION = !isWindows || WIN_BUILD >= 19041;
 
-// -------- capture / transcript state --------
-const state = { capturing: false, busy: false, transcribing: { you: false, them: false } };
-let sttDisabled = false; // set when the key can't reach any speech model (stops retry spam)
+// -------- sttDisabled recovery --------
+// sttDisabled is permanently set after a 403/429/401 so the API is not hammered.
+// After STT_COOLDOWN_MS, allow one retry — if it fails again, re-disable.
+const STT_COOLDOWN_MS = 60_000; // 1 minute
+let _sttDisabledAt = 0; // 0 means not disabled
+
 const transcript = []; // { channel, text, ts } — capped at MAX_TRANSCRIPT_TURNS
 const MAX_TRANSCRIPT_TURNS = 200; // ~30–40 minutes of conversation at normal pace
+let conversationSummary = ''; // summarized dropped (trimmed) turns for LLM reference
 const STREAM_INACTIVITY_MS = 25000; // abort a stalled LLM stream so state.busy can't wedge forever
 let whisperModelManager = null;
 let localWhisperTranscriber = null;
@@ -51,7 +69,22 @@ let activeWhisperModelId = null;
 let desiredCaptureState = false;
 let captureTransition = Promise.resolve(false);
 
-// -------- streaming STT state --------
+// -------- capture / transcript state --------
+const state = { capturing: false, busy: false, transcribing: { you: false, them: false } };
+let sttDisabled = false; // set when the key can't reach any speech model (stops retry spam)
+
+function isSttDisabled() {
+  if (!sttDisabled) return false;
+  if (_sttDisabledAt === 0) _sttDisabledAt = Date.now();
+  // Allow one retry after cooldown
+  if (Date.now() - _sttDisabledAt >= STT_COOLDOWN_MS) {
+    sttDisabled = false;
+    _sttDisabledAt = 0;
+    return false;
+  }
+  return true;
+}
+
 let streamingSTT = { you: null, them: null }; // streaming STT instances per channel
 let streamingMode = false; // true when using WebSocket streaming STT
 const vad = {
@@ -73,7 +106,31 @@ const vad = {
 
 function pushTranscript(turn) {
   transcript.push(turn);
-  if (transcript.length > MAX_TRANSCRIPT_TURNS) transcript.splice(0, transcript.length - MAX_TRANSCRIPT_TURNS);
+  // Trim excess immediately so transcript.length never exceeds MAX_TRANSCRIPT_TURNS.
+  if (transcript.length > MAX_TRANSCRIPT_TURNS) {
+    const dropped = transcript.splice(0, transcript.length - MAX_TRANSCRIPT_TURNS);
+    conversationSummary = summarizeDroppedTurns(dropped);
+  }
+}
+
+/**
+ * Summarizes dropped (trimmed) turns for LLM reference when later context is needed.
+ * Returns a brief string like "[Earlier: 3 you turns, 5 interviewer questions about X, Y, Z]"
+ * or an empty string if there are no dropped turns.
+ */
+function summarizeDroppedTurns(drops) {
+  if (!drops || drops.length === 0) return '';
+  const you = drops.filter(t => t.channel === 'you');
+  const them = drops.filter(t => t.channel === 'them');
+  const parts = [];
+  if (you.length > 0) parts.push(`${you.length} you ${you.length === 1 ? 'turn' : 'turns'}`);
+  if (them.length > 0) {
+    // Sample a few distinct topics from 'them' to give the LLM orientation.
+    const sample = them.slice(0, 5).map(t => t.text).filter(Boolean);
+    const topicHint = sample.length > 0 ? `: ${sample.join(', ')}` : '';
+    parts.push(`${them.length} interviewer ${them.length === 1 ? 'question' : 'questions'}${topicHint}`);
+  }
+  return `[Earlier: ${parts.join('; ')}]`;
 }
 
 function send(channel, data) { if (win && !win.isDestroyed()) win.webContents.send(channel, data); }
@@ -89,9 +146,9 @@ function getWhisperRuntime() {
   });
 }
 
-function publishTranscript(channel, text) {
+function publishTranscript(channel, text, startTs) {
   if (!text || !text.trim()) return;
-  const turn = { channel, text: text.trim(), ts: Date.now() };
+  const turn = { channel, text: text.trim(), ts: startTs || Date.now() };
   pushTranscript(turn);
   send('transcript', turn);
   send('stt:final', { channel, text: turn.text });
@@ -100,7 +157,7 @@ function publishTranscript(channel, text) {
 async function startLocalWhisper(settings) {
   if (!whisperModelManager) throw new Error('The local Whisper model manager is not ready.');
   const localSettings = settings.localWhisper || {};
-  const model = requireWhisperModel(localSettings.modelId || 'base.en');
+  const model = requireWhisperModel(localSettings.modelId || 'large-v3-turbo');
   const runtime = getWhisperRuntime();
   if (!runtime.available) throw new Error(runtime.message);
   activeWhisperModelId = model.id;
@@ -129,6 +186,7 @@ async function startLocalWhisper(settings) {
       onStatus: (status) => send('stt:status', { provider: 'local', ...status }),
       onError: (error) => {
         sttDisabled = true;
+        _sttDisabledAt = Date.now(); // start cooldown so isSttDisabled() can recover
         console.log('[local-whisper] error', error && error.message);
         send('stt:status', { provider: 'local', status: 'error' });
         send('status', { message: `Local transcription error: ${error.message}. Audio was not sent to a cloud fallback.` });
@@ -170,8 +228,17 @@ function createWindow() {
   let startY = workArea.y + 6;
 
   if (savedSettings.windowX !== null && savedSettings.windowY !== null) {
-    const clampedX = Math.max(workArea.x - W + 100, Math.min(savedSettings.windowX, workArea.x + workArea.width - 100));
-    const clampedY = Math.max(workArea.y, Math.min(savedSettings.windowY, workArea.y + workArea.height - 40));
+    // Find the display that contains the saved position (handles multi-monitor setups).
+    // Falls back to primary display if the saved position doesn't land on any display.
+    const allDisplays = screen.getAllDisplays();
+    const targetDisplay = allDisplays.find((d) => {
+      const b = d.workArea;
+      return savedSettings.windowX >= b.x && savedSettings.windowX < b.x + b.width &&
+             savedSettings.windowY >= b.y && savedSettings.windowY < b.y + b.height;
+    }) || screen.getPrimaryDisplay();
+    const area = targetDisplay.workArea;
+    const clampedX = Math.max(area.x - W + 100, Math.min(savedSettings.windowX, area.x + area.width - 100));
+    const clampedY = Math.max(area.y, Math.min(savedSettings.windowY, area.y + area.height - 40));
     startX = clampedX;
     startY = clampedY;
   }
@@ -233,11 +300,14 @@ function createWindow() {
     }, 500);
   });
 
-  win.setTitle('Microsoft Edge Update'); // set before load
+  // Apply the same-title trick only when content protection is active.
+  // When CUE_NO_PROTECT=1 the overlay is intentionally visible, so use the real name.
+  const appTitle = (shouldProtect && WIN_SUPPORTS_CONTENT_PROTECTION) ? 'Microsoft Edge Update' : 'cue';
+  win.setTitle(appTitle); // set before load
 
   win.webContents.on('did-finish-load', () => {
     win.showInactive();
-    win.setTitle('Microsoft Edge Update');
+    win.setTitle(appTitle);
     // Warn about missing content protection on old Windows builds
     if (isWindows && shouldProtect && !WIN_SUPPORTS_CONTENT_PROTECTION) {
       send('status', {
@@ -288,10 +358,11 @@ function handleSttError(err, settings) {
     frame: 'handleSttError',
     context: { provider: err.provider, status: err.status || null, alreadyDisabled: sttDisabled },
   });
-  if (sttDisabled) return;
+  if (isSttDisabled()) return;
   const isQuota = err.status === 429 || err.code === 'RESOURCE_EXHAUSTED' || (err.message && err.message.includes('Quota exceeded'));
   const noAccess = err.status === 403 || err.status === 401 || err.code === 'model_not_found' || isQuota;
   sttDisabled = true; // stop hammering the API every few seconds
+  _sttDisabledAt = Date.now();
   if (noAccess) {
     send('status', { message: `Transcription off: your ${err.provider} key was rejected or hit a quota limit. Update your key in Settings to resume.` });
   } else {
@@ -322,8 +393,9 @@ function initStreamingSTT() {
         if (batchFallbackAvailable) {
           send('status', { message: `Streaming transcription (${err.provider}) error: ${err.message}. Falling back to batch mode.` });
           startCloudBatch(settings).catch((e) => console.log('[cloud-batch] start error', e && e.message));
-        } else if (!sttDisabled) {
+        } else if (!isSttDisabled()) {
           sttDisabled = true;
+          _sttDisabledAt = Date.now();
           send('status', { message: `Transcription stopped (${err.provider}): ${err.message}. The selected provider has no batch fallback.` });
         }
         streamingMode = false;
@@ -372,10 +444,13 @@ function routeAudio(channel, pcmBuffer) {
   }
 
   // Streaming mode: main's VAD drives the speaking indicator and raw PCM streams to
-  // the socket. (If no provider is active the audio is simply dropped.)
+  // the socket. If no provider is active the audio is simply dropped.
   if (streamingMode && streamingSTT[channel]) {
     vad[channel].processChunk(buf);
     streamingSTT[channel].sendAudio(pcmBuffer);
+  } else if (!localWhisperTranscriber && !cloudBatchTranscriber && !streamingMode) {
+    // Log to help debug why audio is being silently dropped.
+    console.log('[cue] routeAudio: no active STT provider, dropping audio on channel:', channel);
   }
 }
 
@@ -388,6 +463,9 @@ async function setCapturing(active) {
 
   if (active) {
     sttDisabled = false; // reset on re-enable
+    // Reset VAD state from any previous capture session before starting a new one.
+    vad.you.reset();
+    vad.them.reset();
     const settings = store.getSettings();
     if ((settings.sttProvider || 'auto') === 'local') {
       try {
@@ -485,7 +563,7 @@ async function runFeature(mode, userText) {
     }
 
     const settingsForPrompt = store.getSettings();
-    const contextBlock = buildInterviewContext(settingsForPrompt, mode, transcript);
+    const contextBlock = buildInterviewContext(settingsForPrompt, mode, transcript, conversationSummary);
     const system = def.buildSystem ? def.buildSystem(contextBlock, settingsForPrompt.aiRules || '') : (def.system || '');
     const built = def.build({ transcript, userText: userText || '' });
 
@@ -519,6 +597,8 @@ async function runFeature(mode, userText) {
     recordEvent({ level: 'error', event: 'llm_failed', msg: e && e.message ? e.message : String(e), frame: 'runFeature', context: { mode, provider: store.getSettings().provider } });
     send('llm:error', { message: e && e.message ? e.message : String(e) });
   } finally {
+    // Defence in depth: ensure streamSettled is always true after the outer
+    // try/catch regardless of which path threw or returned.
     streamSettled = true;
     state.busy = false;
   }
@@ -592,6 +672,7 @@ ipcMain.handle('transcript:clear', () => {
 ipcMain.on('ask', (_e, payload) => runFeature(payload.mode, payload.text));
 ipcMain.on('mic:pcm', (_e, arrayBuffer) => { if (state.capturing) routeAudio('you', arrayBuffer); });
 ipcMain.on('system:pcm', (_e, arrayBuffer) => { if (state.capturing) routeAudio('them', arrayBuffer); });
+ipcMain.on('loopback:warning', () => { send('status', { message: 'System-audio loopback was disabled. Re-enable "Share audio" in the screen-share bar to continue capturing meeting audio.' }); });
 ipcMain.on('mouse:ignore', (_e, v) => { if (win) win.setIgnoreMouseEvents(!!v, { forward: true }); });
 ipcMain.on('open-pane', (_e, url) => { shell.openExternal(url).catch(() => {}); });
 ipcMain.on('app:quit', () => app.quit());
@@ -645,6 +726,8 @@ function registerShortcuts() {
     shortcutState[name] = ok;
     if (!ok) {
       recordEvent({ level: 'warn', event: 'shortcut_unavailable', msg: 'could not register the ' + name + ' shortcut (' + accel + ')', frame: 'registerShortcuts', context: { shortcut: name, accelerator: accel } });
+      // Notify the renderer so the user sees which shortcut failed.
+      send('status', { message: `Could not register the ${name} shortcut (${accel}). It may be in use by another application.` });
     }
   }
 }

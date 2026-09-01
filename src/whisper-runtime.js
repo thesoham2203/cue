@@ -20,7 +20,9 @@ function locateWhisperRuntime({
   if (isPackaged && resourcesPath) {
     candidates.push(path.join(resourcesPath, 'whisper-runtime'));
   }
-  if (!isPackaged && appPath) {
+  // Always check .cache as a fallback — this covers dev mode (where isPackaged is
+  // incorrectly true) and the standard non-packaged development path.
+  if (appPath) {
     candidates.push(path.join(appPath, '.cache', 'whisper-runtime', target.key));
   }
 

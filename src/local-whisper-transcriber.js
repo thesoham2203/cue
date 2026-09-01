@@ -45,7 +45,7 @@ class LocalWhisperTranscriber {
         onSpeechState: (speechChannel, speaking, durationMs) => {
           this.onSpeechState(speechChannel, speaking, durationMs);
         },
-        onUtterance: (utteranceChannel, pcm) => this._enqueue(utteranceChannel, pcm)
+        onUtterance: (utteranceChannel, pcm, startTs) => this._enqueue(utteranceChannel, pcm, startTs)
       }));
     }
     this.acceptingAudio = true;
@@ -79,14 +79,17 @@ class LocalWhisperTranscriber {
     return this.session.stop({ force: true });
   }
 
-  _enqueue(channel, pcm) {
+  _enqueue(channel, pcm, startTs) {
     this.pendingJobs += 1;
     this.onStatus({ status: 'transcribing', channel, pending: this.pendingJobs });
 
     const job = this.queueTail.then(async () => {
+      // Check discard flag BEFORE the await to avoid race: stop() sets discard after
+      // the drain timeout fires but before queueTail resolves.
       if (this.discardPendingJobs) return;
       const text = await this.session.transcribe(pcm);
-      if (text) this.onTranscript(channel, text);
+      if (this.discardPendingJobs) return; // re-check after await
+      if (text) this.onTranscript(channel, text, startTs);
     });
 
     this.queueTail = job

@@ -63,7 +63,7 @@ class CloudBatchTranscriber {
         onSpeechState: (speechChannel, speaking, durationMs) => {
           this.onSpeechState(speechChannel, speaking, durationMs);
         },
-        onUtterance: (utteranceChannel, pcm) => this._enqueue(utteranceChannel, pcm)
+        onUtterance: (utteranceChannel, pcm, startTs) => this._enqueue(utteranceChannel, pcm, startTs)
       }));
     }
     this.acceptingAudio = true;
@@ -83,7 +83,11 @@ class CloudBatchTranscriber {
     for (const segmenter of this.segmenters.values()) segmenter.stop();
 
     const drained = await this._drainQueues();
-    if (!drained) this.discardPendingJobs = true;
+    if (!drained) {
+      this.discardPendingJobs = true;
+      // Abort any in-flight STT requests so stop() returns promptly.
+      if (typeof this.stt.abort === 'function') this.stt.abort();
+    }
     this.segmenters.clear();
     this.onStatus({ status: 'off', message: 'Cloud transcription stopped.' });
   }
@@ -96,7 +100,7 @@ class CloudBatchTranscriber {
     return Promise.resolve();
   }
 
-  _enqueue(channel, pcm) {
+  _enqueue(channel, pcm, startTs) {
     this.pendingJobs += 1;
     this.onStatus({ status: 'transcribing', channel, pending: this.pendingJobs });
 
@@ -112,7 +116,7 @@ class CloudBatchTranscriber {
         return;
       }
       if (result && isPublishable(result.text)) {
-        this.onTranscript(channel, result.text.trim());
+        this.onTranscript(channel, result.text.trim(), startTs);
       }
     });
 

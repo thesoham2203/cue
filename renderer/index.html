@@ -219,13 +219,22 @@
             <select id="whisper-language" class="s-select compact">
               <option value="auto">Auto-detect</option>
               <option value="en">English</option>
+              <option value="hi">Hindi</option>
+              <option value="mr">Marathi</option>
+              <option value="bn">Bengali</option>
+              <option value="ta">Tamil</option>
+              <option value="te">Telugu</option>
+              <option value="kn">Kannada</option>
+              <option value="gu">Gujarati</option>
+              <option value="pa">Punjabi</option>
+              <option value="ml">Malayalam</option>
             </select>
           </div>
           <div class="s-field">
             <span>CPU threads</span>
             <input id="whisper-threads" type="number" min="0" max="64" step="1" value="0" />
           </div>
-          <div class="s-note">Use 0 for whisper.cpp's default. English-only models always use English regardless of the language setting.</div>
+          <div class="s-note">Use 0 for whisper.cpp's default. English-only models always use English regardless of the language setting. Multilingual models support many languages including Hindi and other Indian languages.</div>
         </div>
 
         <div class="s-status" id="whisper-status"></div>

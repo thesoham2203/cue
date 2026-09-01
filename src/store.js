@@ -14,7 +14,7 @@ const DEFAULTS = {
   provider: 'openai',
   sttProvider: 'auto',
   localWhisper: {
-    modelId: 'base.en',
+    modelId: 'large-v3-turbo',
     language: 'auto',
     threads: 0
   },
@@ -87,11 +87,20 @@ function load() {
   if (data) return data;
   try { data = deepMerge(DEFAULTS, JSON.parse(fs.readFileSync(FILE, 'utf8'))); }
   catch { data = deepMerge(DEFAULTS, {}); }
-
-
   return data;
 }
-function save() { try { fs.writeFileSync(FILE, JSON.stringify(data, null, 2)); } catch (e) { /* ignore */ } }
+function save() {
+  try {
+    // Atomic write: write to a temp file first, then rename over the real file.
+    // On POSIX rename is atomic; on Windows it is atomic so long as the target
+    // exists (which it does — we opened it with readFileSync above).
+    const tmp = FILE + '.tmp';
+    fs.writeFileSync(tmp, JSON.stringify(data, null, 2), { mode: 0o600 });
+    fs.renameSync(tmp, FILE);
+  } catch (e) {
+    console.error('[store] save failed:', e && e.message ? e.message : String(e));
+  }
+}
 
 module.exports = {
   MAX_AI_RULES_CHARS,

@@ -61,21 +61,32 @@ async function transcribeGemini(apiKey, wav) {
 function createSTT(settings) {
   const keys = settings.apiKeys || {};
   const selectedProvider = settings.sttProvider || 'auto';
+  // Validate against known providers; fall back to 'auto' for unknown values.
+  // 'local' is a valid sttProvider value meaning "use local Whisper" — it should
+  // not build a cloud STT chain, so we include it here so it is recognised as valid
+  // rather than falling through to 'auto'.
+  // 'deepgram' is intentionally absent here — it is streaming-only in this codebase
+  // (handled by stt-streaming.js). If it's selected as sttProvider, we fall back to
+  // 'auto' so the batch chain still runs with whatever keys are available.
+  const KNOWN_PROVIDERS = new Set(['auto', 'openai', 'groq', 'gemini', 'local']);
+  const effectiveProvider = KNOWN_PROVIDERS.has(selectedProvider) ? selectedProvider : 'auto';
   const vocabPrompt = buildVocabPrompt(settings);
   const chain = [];
-  if ((selectedProvider === 'auto' || selectedProvider === 'openai') && keys.openai) {
+  if ((effectiveProvider === 'auto' || effectiveProvider === 'openai') && keys.openai) {
     chain.push({ p: 'openai', fn: (wav) => transcribeOpenAI(keys.openai, wav, settings.sttModel, undefined, vocabPrompt) });
   }
-  if ((selectedProvider === 'auto' || selectedProvider === 'groq') && keys.groq) {
+  if ((effectiveProvider === 'auto' || effectiveProvider === 'groq') && keys.groq) {
     chain.push({ p: 'groq', fn: (wav) => transcribeOpenAI(keys.groq, wav, 'whisper-large-v3-turbo', 'https://api.groq.com/openai/v1', vocabPrompt) });
   }
-  if ((selectedProvider === 'auto' || selectedProvider === 'gemini') && keys.gemini) {
+  if ((effectiveProvider === 'auto' || effectiveProvider === 'gemini') && keys.gemini) {
     chain.push({ p: 'gemini', fn: (wav) => transcribeGemini(keys.gemini, wav) });
   }
-  if (keys.openai && chain.length > 1) chain.unshift(chain.splice(chain.findIndex((c) => c.p === 'openai'), 1)[0]);
+
 
   let disabledUntil = 0;
   let lastProvider = null;
+  // AbortController shared across all transcribe() calls in this chain.
+  let abortController = null;
 
   return {
     available: chain.length > 0,
@@ -84,16 +95,23 @@ function createSTT(settings) {
       if (!chain.length || !pcm || pcm.length < 3200) return { text: '' };
       const now = Date.now();
       if (disabledUntil && now < disabledUntil) return { text: '', error: { provider: lastProvider, message: `Temporary ${lastProvider || 'provider'} quota or rate-limit; waiting 30s before retrying.` } };
+      // Create a new AbortController for this call; stored as `abortController` so
+      // stop() can interrupt in-flight requests.
+      abortController = new AbortController();
+      const { signal } = abortController;
       const wav = pcmToWav(pcm, 16000, 1);
       let lastErr = null;
       for (const c of chain) {
+        if (signal.aborted) return { text: '', error: { provider: c.p, message: 'transcribe aborted' } };
         try {
           const text = await c.fn(wav);
+          if (signal.aborted) return { text: '', error: { provider: c.p, message: 'transcribe aborted' } };
           disabledUntil = 0;
           lastProvider = c.p;
           if (looksLikeHallucination(text)) return { text: '', provider: c.p };
           return { text, provider: c.p };
         } catch (e) {
+          if (signal.aborted) return { text: '', error: { provider: c.p, message: 'transcribe aborted' } };
           // Shares detection/wording with the LLM error path (src/llm.js) so a
           // 404 (dead/misspelled model) or 429 (quota) reads the same whether it
           // came from a chat request or a transcription request.
@@ -108,6 +126,12 @@ function createSTT(settings) {
         }
       }
       return { text: '', error: lastErr };
+    },
+    abort() {
+      if (abortController) {
+        abortController.abort();
+        abortController = null;
+      }
     }
   };
 }

@@ -161,11 +161,12 @@ function buildJDBlock(jd, limit = 600) {
 // ── Main export ───────────────────────────────────────────────────────────────
 
 /**
- * buildInterviewContext(settings, mode, transcript)
+ * buildInterviewContext(settings, mode, transcript, conversationSummary)
  * Returns a system-prompt string with only the context fields relevant to
  * the detected interview category. Returns null for leetcode mode.
+ * conversationSummary is a string summarizing dropped (trimmed) transcript turns.
  */
-function buildInterviewContext(settings, mode, transcript) {
+function buildInterviewContext(settings, mode, transcript, conversationSummary) {
   // Coding problems never need personal context
   if (mode === 'leetcode') return null;
 
@@ -196,6 +197,18 @@ function buildInterviewContext(settings, mode, transcript) {
   // Job description — always include when available
   if (hasJD) {
     blocks.push(buildJDBlock(jd, category === 'technical' ? 300 : 600));
+  }
+
+  // Recent conversation history — last 20 turns, no timestamps (LLM sees text only).
+  // Start with dropped-turns summary if available, then append recent turns.
+  if (transcript && transcript.length > 0) {
+    const MAX_CONTEXT_TURNS = 20;
+    const recent = transcript.slice(-MAX_CONTEXT_TURNS);
+    const historyLines = recent.map(t => `${t.channel === 'you' ? 'You' : 'Interviewer'}: ${t.text}`);
+    if (conversationSummary) historyLines.unshift(conversationSummary);
+    if (historyLines.length > 0) {
+      blocks.push('=== Recent Conversation ===\n' + historyLines.join('\n'));
+    }
   }
 
   // Category-specific injections

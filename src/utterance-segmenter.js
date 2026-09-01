@@ -41,6 +41,8 @@ class UtteranceSegmenter {
       onSpeechStart: () => this._beginUtterance(),
       onSpeechEnd: (durationMs) => this._requestUtteranceEnd(durationMs)
     });
+    // Speech-onset timestamp captured from the VAD when the current utterance began.
+    this._utteranceStartTs = null;
   }
 
   push(pcm) {
@@ -80,6 +82,8 @@ class UtteranceSegmenter {
   _beginUtterance() {
     this.collecting = true;
     this.startedDuringPush = true;
+    // Capture the speech-onset timestamp from the VAD before the ring buffer is cleared.
+    this._utteranceStartTs = this.vad.getSpeechStartTime();
     const preRoll = this.ringBuffer.read();
     this.utteranceChunks = preRoll.length ? [Buffer.from(preRoll)] : [];
     this.utteranceBytes = preRoll.length;
@@ -116,10 +120,11 @@ class UtteranceSegmenter {
     this.utteranceChunks = [];
     this.utteranceBytes = 0;
     this.ringBuffer.clear();
+    this._utteranceStartTs = null;
   }
 
   _emit(pcm) {
-    this.onUtterance(this.channel, Buffer.from(pcm));
+    this.onUtterance(this.channel, Buffer.from(pcm), this._utteranceStartTs);
   }
 
   _millisecondsToBytes(durationMs) {

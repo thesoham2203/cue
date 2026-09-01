@@ -1,239 +1,280 @@
-<div align="center">
-
 # cue
 
-**An open-source AI copilot that floats over your screen — sees what you see, hears your meetings, and stays hidden from screen shares.**
+**A free, open-source AI copilot that floats invisibly over your screen — sees what you see, hears your meetings, and stays hidden from screen shares.**
 
-A free, self-hosted alternative to Cluely, for **Windows**. Bring your own AI key (OpenAI · Anthropic · Google Gemini · OpenAI-compatible endpoints).
+A self-hosted alternative to Cluely for **Windows**. Bring your own AI key — OpenAI · Anthropic · Google Gemini · Azure · Groq · Ollama · and any OpenAI-compatible endpoint.
 
 <img src="docs/tutorial.png" width="620" alt="cue first-run tutorial" />
-
-</div>
 
 ---
 
 > [!IMPORTANT]
-> **Please read this first.** cue tries to stay out of screen recordings/shares, but this is **best-effort, not guaranteed** — on Windows 10 builds older than 2004 it degrades to a black box instead of true exclusion, and a phone camera pointed at your screen always sees it. Using a hidden assistant during a **proctored exam, job interview, or recorded meeting** may break that platform's rules and, in some places, consent laws. cue is built for legitimate uses — your own notes, studying, accessibility, and practice. **You are responsible for how you use it.**
+> **Please read this first.** cue tries to stay out of screen recordings and screen shares, but this is **best-effort, not guaranteed** — on Windows 10 builds older than 2004 it degrades to a black box instead of true exclusion, and a phone camera pointed at your screen will always see it. Using a hidden assistant during a **proctored exam, a recorded meeting, or any session where the rules prohibit outside assistance** may violate that platform's terms and, in some places, consent laws. cue is built for legitimate uses — personal study, interview practice, accessibility, and real-time coaching on content you already own. **You are responsible for how you use it.**
+
+---
+
+## Features
+
+- **Screen-aware** — takes a screenshot only when a feature needs it; no continuous recording
+- **Two-channel audio** — captures your microphone ("You") and meeting audio ("Them") separately so the AI knows who said what
+- **Real-time transcription** — local whisper.cpp (private, offline) or cloud (OpenAI · Deepgram · Gemini)
+- **Context-aware coaching** — detects the interview question category (behavioral, technical, motivation, compensation, situational) and tailors the answer using your resume, STAR stories, and job description
+- **Invisible by default** — hidden from Zoom, Teams, Meet, and any recorder that uses WDA_EXCLUDEFROMCAPTURE (Windows 10 build 19041+)
+- **No server, no accounts** — everything runs locally except the LLM/STT call to your chosen provider
+- **Bring your own key** — pay only your AI provider for what you use; cue collects nothing
 
 ---
 
 ## What it does
 
-cue floats a small glass panel on top of everything. It takes **three separate inputs** — your **screen**, your **microphone**, and your **meeting audio** (what the other person says) — and uses an AI model to help you in real time.
-
-| Feature | How to trigger | What it uses |
+| Feature | Trigger | Inputs |
 |---|---|---|
-| **Assist** | `Ctrl` `Enter` (configurable) | your screen + recent conversation |
-| **What should I say?** | button | meeting audio + your mic |
-| **Follow-up questions** | button | the whole conversation |
-| **Recap** | button | the whole conversation |
-| **Ask anything** | type + `Enter` | your screen + conversation |
-| **Solve a coding problem** | `Ctrl` `H` | your screen only |
-| **Smart** toggle | pill in the box | switches to a smarter (slower) model |
+| **Assist** | `Ctrl Enter` | Screen + recent conversation |
+| **What should I say?** | Button | Meeting transcript |
+| **Answer this question** | Click any transcript turn | That specific question |
+| **Follow-up questions** | Button | Full conversation |
+| **Recap** | Button | Full conversation |
+| **Ask anything** | Type + `Enter` | Screen + conversation |
+| **Solve coding problem** | `Ctrl H` | Screen only |
+| **Smart** toggle | Pill in toolbar | Switches to a smarter (slower) model |
 
-It's a copilot for **live meetings** ("what do I say to that?") and **coding problems** (screenshot → full solution), and it's designed to be **invisible in screen shares** so it stays your private assistant.
+---
 
-### Requirements
+## Requirements
 
-- **Windows 11**, or **Windows 10 version 2004 (build 19041)** or newer. The "hidden from screen shares" flag (`WDA_EXCLUDEFROMCAPTURE`) needs build 19041+; older Windows 10 still runs cue but renders a black box in captures instead of truly excluding the window.
-- **Microphone permission** — the only OS permission cue needs. Screenshots and meeting audio need no permission and work immediately.
+- **Windows 10 version 2004 (build 19041)** or later, or **Windows 11**
+  - The "hidden from screen shares" flag (`WDA_EXCLUDEFROMCAPTURE`) requires build 19041+. Older Windows still runs cue but shows a black box in captures instead of hiding the window.
+- **Microphone permission** — the only OS permission cue needs. Screenshots and meeting audio require no extra permission.
 - **An API key** from at least one AI provider (see [Step 2](#step-2--add-your-ai-key-bring-your-own)).
-
-Meeting audio — capturing the *other* person, which powers **What should I say?**, **Follow-up questions**, and **Recap** — uses Windows system-audio loopback and works out of the box.
 
 ---
 
 ## Install
 
-Option A is the easiest. Use Option B if you'd rather run from source.
+### Option A — Download the installer
 
-### Option A — Download the installer (easiest)
-
-Go to the [**Releases**](../../releases) page and download **`cue-win-x64.exe`**, then run it. It's a per-user installer, so it never asks for administrator rights and installs cue just for you; launch it from the Start menu afterward.
+Go to the [**Releases**](../../releases) page and download **cue-win-x64.exe**, then run it. Per-user install, no admin rights needed.
 
 The installer is **unsigned**, so Windows SmartScreen may show a **"Windows protected your PC" / "Unknown publisher"** warning. Click **More info → Run anyway** to proceed.
 
 ### Option B — Run from source
 
-You need [Node.js](https://nodejs.org) **22.12+** installed (required by dev dependencies). No Visual Studio build tools required — cue deliberately avoids native modules.
+Requires [Node.js](https://nodejs.org) **22.12+**. No Visual Studio build tools needed — cue deliberately avoids native modules.
 
 ```bash
-git clone https://github.com/Blueturboguy07/cue.git
+git clone https://github.com/thesoham2203/cue.git
 cd cue
 npm install
 npm start
 ```
 
-That's the whole setup. There's no permission dance — grant the mic when Windows asks and you're done.
-
 To build a standalone app:
 
 ```bash
-npm run pack        # unpacked app     -> dist/win-unpacked/cue.exe
-npm run dist:win    # NSIS installer   -> dist/cue-win-x64.exe
+npm run pack        # unpacked app   → dist/win-unpacked/cue.exe
+npm run dist:win    # NSIS installer → dist/cue-win-x64.exe
 ```
 
-See **[BUILD.md](BUILD.md)** for the full build-and-package walkthrough (prerequisites, bundling the local whisper runtime, and how the installer is produced).
-
-Packaged builds can include a pinned `whisper.cpp` runtime. When running from source and using **Local** transcription, prepare the matching runtime once:
+When running from source with **Local** transcription, prepare the whisper.cpp runtime once:
 
 ```bash
 npm run prepare:whisper
 ```
 
-Windows x64 uses a checksum-verified binary from the pinned upstream whisper.cpp release — no compiler or toolchain needed.
+This downloads `whisper-server.exe` (~8 MB, SHA-256 verified from the pinned whisper.cpp v1.9.1 release) to `.cache/whisper-runtime/win32-x64/`. It persists across restarts.
 
 ---
 
-## First launch — the 1-minute setup
-
-When cue opens the first time, a **built-in tutorial** walks you through everything below. You can reopen it anytime by clicking the **cue logo** (top-left of the pill). Here's the same thing in writing.
+## First launch — 2-minute setup
 
 ### Step 1 — Grant the microphone
 
-cue can't hear you until Windows lets it. When you first use a listening feature you'll usually be prompted — click **Allow**. If no prompt appears, grant access manually:
+cue can't hear you until Windows allows it. When you first use a listening feature you'll be prompted — click **Allow**. If no prompt appears, grant access manually:
 
-Settings → **Privacy & security** → **Microphone** → turn on **Microphone access** *and* **Let desktop apps access your microphone**.
+**Settings → Privacy & security → Microphone → turn on "Microphone access" and "Let desktop apps access your microphone."**
 
-Screenshots and meeting audio need **no permission at all** — they work immediately, using Windows loopback capture.
+Screenshots and meeting audio need **no permission** — they work immediately via Windows loopback capture.
 
 ### Step 2 — Add your AI key (bring your own)
 
-cue uses **your own** API key, so it's free to run (you only pay your AI provider for what you use). Click the **`...`** button in the input box (or press `Ctrl` `,`) to open **Settings**, pick a provider, and paste your key:
+Click the **···** button in the input box (or press `Ctrl ,`) to open **Settings**, pick a provider, and paste your key:
 
 | Provider | Get a key | Notes |
 |---|---|---|
-| **OpenAI** | [platform.openai.com/api-keys](https://platform.openai.com/api-keys) | One key does everything — **but** for the *listening* features the key must have **Whisper / audio** access (a "restricted" project key that only allows chat will give a 403 on transcription). |
-| **Anthropic (Claude)** | [console.anthropic.com](https://console.anthropic.com) | Great for screen & coding help. Claude has no speech-to-text, so add an OpenAI or Gemini key too if you want the listening features. |
-| **Google Gemini** | [aistudio.google.com/apikey](https://aistudio.google.com/apikey) | One key does chat + transcription. |
-| **Azure AI Foundry** | [ai.azure.com](https://ai.azure.com) | Paste your **endpoint** plus your key in Settings. **Azure OpenAI:** `https://&lt;resource&gt;.openai.azure.com/openai` — **AI Foundry:** `https://&lt;host&gt;.cognitiveservices.azure.com` (cue appends `/openai/v1` itself). The **model** fields are your deployment names. No speech-to-text — add an OpenAI or Gemini key for listening. |
-| **Custom** | Your endpoint or gateway | Any OpenAI-compatible Chat Completions endpoint. The API key is optional for unauthenticated local servers. |
+| **OpenAI** | [platform.openai.com/api-keys](https://platform.openai.com/api-keys) | One key does chat + transcription — but for listening features the key must have **Whisper / audio** access. A restricted project key that only allows chat will 403 on transcription. |
+| **Anthropic (Claude)** | [console.anthropic.com](https://console.anthropic.com) | Excellent for screen & coding help. Claude has no speech-to-text API, so add an OpenAI or Gemini key too if you want listening. |
+| **Google Gemini** | [aistudio.google.com/apikey](https://aistudio.google.com/apikey) | One key does both chat and transcription. Free-tier available. |
+| **Groq** | [console.groq.com](https://console.groq.com) | Fast and free-tier friendly. Works for both chat and transcription (Whisper large-v3-turbo). |
+| **Azure AI Foundry** | [ai.azure.com](https://ai.azure.com) | Paste your **endpoint** and key in Settings. Azure OpenAI: `https://<resource>.openai.azure.com/openai`. AI Foundry: `https://<host>.cognitiveservices.azure.com` (cue appends `/openai/v1` itself). Model fields = deployment names. No built-in STT — add OpenAI or Gemini for listening. |
+| **Ollama** | [ollama.com](https://ollama.com) | Local LLM server. Paste `http://localhost:11434` as the "key" field. No API cost. |
+| **Custom** | Your endpoint or gateway | Any OpenAI-compatible Chat Completions endpoint. |
 
-To use an OpenAI-compatible endpoint, select **Custom** and configure its Base URL, API key, and Fast/Smart model IDs. Custom endpoints handle LLM requests only; listening continues to use Deepgram, OpenAI, or Gemini credentials.
+Your key is stored **only on your computer** (`cue-data.json`) and is sent **only** to your chosen provider. cue has no server and collects nothing.
 
-| Example | Base URL | Model |
+### Step 3 — Optional: transcribe locally with whisper.cpp
+
+Open **Settings → Audio**, choose **Local**, and download a model. All 27 models from the official whisper.cpp catalog are available — multilingual, quantized, turbo, and TinyDiarize variants included.
+
+| Model | Size | Notes |
 |---|---|---|
-| OpenClaw local gateway | `http://127.0.0.1:18789/v1` | `openclaw/default` |
-| Ollama | `http://127.0.0.1:11434/v1` | An installed Ollama model ID |
+| `large-v3-turbo` | 1.6 GB | **Recommended default** — best accuracy + speed balance |
+| `large-v3` | 3.1 GB | Highest accuracy, slower |
+| `large-v3-turbo-q5_k_m` | 547 MB | Quantized turbo — good accuracy, lower memory |
+| `medium.en` | 769 MB | English-only, fast |
+| `base.en` | 148 MB | Fast English-only, lower accuracy |
+| `tiny.en` | 39 MB | Fastest, lowest accuracy |
+| Multilingual variants | 74 MB – 3.1 GB | Hindi, Marathi, Bengali, Tamil, Telugu, Kannada, Gujarati, Punjabi, Malayalam, and more |
 
-Your key is stored **only on your computer** (in `cue-data.json`) and is sent **only** to that provider. cue has no server and collects nothing.
+Local mode is independent from your chat provider — use local STT with any LLM. Audio never leaves your machine and is never written to disk. A local failure is always reported; audio is never silently rerouted to a cloud fallback.
 
-### Optional — transcribe locally with whisper.cpp
+### Step 4 — Optional: tailor answers to your profile
 
-Open **Settings → Audio**, choose **Local**, and download a model. `base.en` is the recommended English default; all 30 models supported by the official whisper.cpp download script are available, including multilingual, quantized, large, turbo, and TinyDiarize variants.
+Open **Settings** and fill in the **Profile** and **Interview Prep** tabs:
 
-Local mode is independent from the chat provider, so you can use local speech-to-text with OpenAI, Anthropic, or Gemini chat. The selected model loads once when listening starts, serves both the **You** and **Them** channels, and unloads only after queued speech has been transcribed when listening stops.
+| Field | What it does |
+|---|---|
+| **Résumé / background** | Paste your CV text. cue grounds career answers in your actual experience. |
+| **Job description** | Paste the JD. cue tailors every answer to the target role. |
+| **STAR stories** | 3–5 behavioral stories in plain English. cue uses these for "tell me about a time…" questions — no invented examples. |
+| **Why this company** | Your genuine answer for motivation questions. |
+| **Why leaving** | Your answer for "why are you leaving your current role?" |
+| **Work style** | How you work, what you value — used for culture-fit and situational questions. |
+| **Salary target** | e.g. `$150k–$180k base + equity`. Shown when compensation questions come up. |
+| **Questions to ask** | Your prepared interviewer questions. Surfaced when "Do you have any questions?" is detected. |
+| **AI style rules** | Optional: tell the AI how to write — "no em-dashes", "use bullet points", "casual tone". Applied to all modes except LeetCode. |
 
-- Audio inference stays on your computer and audio is never written to a temporary file.
-- Model files are downloaded only when you ask, support cancel/resume, and are checked against pinned byte counts and SHA-256 hashes.
-- Local mode never silently sends audio to a cloud fallback. A local failure is reported without sending the audio elsewhere.
-- Models are stored under cue's Electron user-data directory and can be imported or deleted from Settings.
+> [!TIP]
+> You and the interviewer's words are **both** captured. Your own words ("You" channel) give the AI context about answers you've already given — so it won't repeat them, can reference what you said, and can build coherent multi-turn follow-ups. Both channels feed the conversation history sent to the LLM.
 
-### Optional — tailor answers to your background
+### Step 5 — The Zoom setting (only needed for Zoom)
 
-In **Settings**, paste your résumé or professional background into **Résumé / professional background**. cue uses it as the factual reference for career-related answers and says when the résumé does not provide a detail. You can clear it anytime.
+cue hides itself from most screen-share tools automatically — **Google Meet, Microsoft Teams, and QuickTime need nothing.** Zoom needs one setting:
 
-### Step 3 — The Zoom setting (only needed for Zoom)
-
-cue is hidden from most screen-share tools automatically — **Google Meet, Microsoft Teams, and QuickTime need nothing.** **Zoom** has a specific setting that decides whether it respects cue's "don't capture me" flag:
-
-> **Zoom → Settings → Share Screen → Advanced → Screen capture mode → choose "Advanced capture with window filtering."**
+> **Zoom → Settings → Share Screen → Advanced → Screen capture mode → "Advanced capture with window filtering"**
 
 <div align="center"><img src="docs/zoom-setting.png" width="560" alt="Zoom screen capture mode setting" /></div>
 
-**Why:** the *"...with window filtering"* modes tell Zoom to leave out windows that mark themselves as private — which is exactly what cue does. The **"Advanced capture without window filtering"** mode grabs the raw screen and **will show cue**, so avoid it.
+---
+
+## Using cue
+
+| Action | How |
+|---|---|
+| **Assist** (do the smart thing) | `Ctrl Enter` |
+| **Solve coding problem** | `Ctrl H` |
+| **Start / stop listening** | The ▢ button in the top bar (green dot = live) |
+| **Ask a question** | Type in the box + `Enter` |
+| **Answer a specific question** | Click any "Them" turn in the transcript |
+| **Smart mode** | Toggle the **Smart** pill for a more thorough model |
+| **Hide** | Collapse to top bar only — drag by the top pill |
+| **Quit** | `Ctrl Shift X` |
+
+The panel is transparent and click-through — blank space around it never blocks the app behind it.
 
 ---
 
-## How to use it
+## How it works
 
-- **`Ctrl` `Enter` — Assist.** The do-the-smart-thing key. On a coding problem it solves it; in a conversation it tells you what to say. Works from anywhere. Change it under **Settings → Keyboard shortcuts**.
-- **`Ctrl` `H` — Solve what's on screen.** Screenshots a coding problem and returns the approach, code, and time/space complexity.
-- **The `▢` button** (top bar) — start/stop **listening** to a meeting. The green dot means it's live.
-- **Type a question** in the box and press `Enter` to ask about your screen or conversation.
-- **Smart** — flip it on for a smarter, more thorough model; off for fast and cheap.
-- **Hide** collapses the panel to just the top bar. Drag cue around by the **top pill**. Quit with `Ctrl` `Shift` `X`.
+cue is an [Electron](https://www.electronjs.org/) app. Everything runs locally except the AI provider call.
 
-The panel is see-through and click-through — the empty space around it never blocks the app behind it.
+**Three inputs, kept completely separate:**
 
----
+- **Screen** — captured with Electron's `desktopCapturer` (full-resolution screenshots, taken only when a feature needs one, never continuously recorded)
+- **Microphone ("You")** — `getUserMedia` → downsampled to 16 kHz PCM → voice-activity detected → transcribed
+- **Meeting audio ("Them")** — `getDisplayMedia` system-audio loopback → same pipeline, separate channel
 
-## How it works (under the hood)
+Both audio streams run through an adaptive energy-based VAD (voice activity detection) that segments speech into utterances with a 300 ms pre-roll buffer so the first word is never cut off. Utterances are passed to the selected transcription backend: a persistent `whisper-server.exe` child process for local mode, or a cloud STT API for cloud mode.
 
-cue is an [Electron](https://www.electronjs.org/) app. Everything runs locally except the calls to your chosen AI provider.
+The full conversation (both "You" and "Them" turns) is fed to the LLM as context. cue detects the current question category — behavioral, technical, situational, motivation, compensation — and automatically injects the right subset of your profile: STAR stories for behavioral, resume skills for technical, salary target for compensation, etc.
 
-**The three inputs are kept completely separate:**
-- **Screen** — captured with Electron's `desktopCapturer` (full-resolution screenshots, taken only when a feature needs one).
-- **Your mic ("You")** — `getUserMedia` → downsampled to 16 kHz audio → transcribed.
-- **Meeting audio ("Them")** — `getDisplayMedia` loopback capture of your system's output audio, kept on its own channel so cue knows *who* said what.
-
-Both audio streams are transcribed by the independently selected speech provider (local whisper.cpp, Deepgram, OpenAI, or Gemini) and fed, with an optional screenshot, to your chat model. Responses **stream** into the panel word-by-word.
-
-When Local transcription is selected, cue runs one persistent `whisper-server` sidecar bound to `127.0.0.1` on a temporary port with a random request path. Voice activity detection creates bounded in-memory utterances with pre-roll, and both channels share a serialized inference queue because one Whisper context must not process concurrent requests. Stop immediately ends new audio capture, drains the current queue for a bounded period, then terminates the sidecar.
-
-**The invisibility** is a single window flag — `setContentProtection(true)` — which Windows enforces by setting `WDA_EXCLUDEFROMCAPTURE` via `SetWindowDisplayAffinity`, so the compositor drops the window from every capture path. Windows 10 builds before 2004 fall back to `WDA_MONITOR`, which renders a black box rather than truly excluding the window.
-
-It's the same mechanism DRM apps and Zoom's own toolbar use. It is **not** a GPU trick or a special overlay layer. Set `CUE_NO_PROTECT=1` to disable it while debugging.
+**Invisibility** is a single Windows API call — `SetWindowDisplayAffinity(WDA_EXCLUDEFROMCAPTURE)` — which tells the OS compositor to exclude the window from every screen capture path. The window title is also set to `"Microsoft Edge Update"` when protection is active, making it indistinguishable from a background Windows process in task lists.
 
 ```
-main process ──┬─ overlay window (frameless, transparent, always-on-top, content-protected)
-               ├─ screenshot capture (desktopCapturer)
-               ├─ speech-to-text (Whisper / Gemini)      ── "You" + "Them" channels
-               └─ LLM streaming (OpenAI / Anthropic / Gemini / Custom)
-renderer ──────┴─ the glass UI + mic capture + system-audio loopback
+main process ───┬── overlay window (frameless, transparent, always-on-top, content-protected)
+                ├── screenshot capture (desktopCapturer)
+                ├── speech-to-text (Whisper / Gemini / Deepgram / Groq)  ── "You" + "Them" channels
+                └── LLM streaming (OpenAI / Anthropic / Gemini / Azure / Groq / Ollama / Custom)
+renderer ───────┴── glass UI + mic capture (getUserMedia) + system-audio loopback (getDisplayMedia)
 ```
 
 ---
 
 ## Troubleshooting
 
-**Local transcription says the runtime is not prepared.**
-Packaged releases can include the runtime. If you are running from source, run `npm run prepare:whisper` once and restart cue.
+**The whisper runtime shows "Not prepared" even after running `npm run prepare:whisper`.**
+This was a bug in dev mode where Electron's `app.isPackaged` incorrectly returned `true`, causing cue to look in the wrong directory. It is now fixed — the runtime is always found at `.cache/whisper-runtime/` regardless of how cue is launched. Pull the latest changes and restart.
 
-**Local transcription says the model is missing or invalid.**
-Open **Settings → Audio**, select the model, and choose **Download**. A cancelled download can be resumed. If verification fails repeatedly, delete the partial/model file from the same screen and download it again.
+**Local transcription says the model is missing.**
+Open **Settings → Audio**, select the model, and click **Download**. A cancelled download can be resumed. If verification fails repeatedly, delete the model from the same screen and re-download.
 
 **A large local model is slow or runs out of memory.**
-Try `base.en`, `tiny.en`, or a quantized `q5`/`q8` model. Model size in Settings is the download size, not a guarantee of runtime RAM use; larger models require substantially more memory and CPU/GPU time.
+Try `base.en`, `tiny.en`, or a quantized `q5` / `q8` model. Model size shown in Settings is the download size — runtime RAM use is higher.
 
-**cue has no taskbar icon — how do I quit it?**
-That's deliberate; it stays out of your way. Press **`Ctrl` `Shift` `X`**. If the shortcut didn't register because another app claimed it, end the **cue** (or **electron**) process in Task Manager.
+**cue has no taskbar icon — how do I quit?**
+Press **Ctrl Shift X**. If the shortcut didn't register, end the `cue` or `electron` process in Task Manager.
 
 **`npm start` crashes with `Cannot read properties of undefined (reading 'getPath')`.**
-Something in your environment set **`ELECTRON_RUN_AS_NODE=1`** — some editors and terminals do, notably VS Code's integrated terminal. That makes Electron boot as plain Node, so `require('electron')` returns a path string instead of the real module. Clear it and relaunch: in PowerShell `Remove-Item Env:\ELECTRON_RUN_AS_NODE`, in Git Bash `unset ELECTRON_RUN_AS_NODE`.
+Something in your environment has set `ELECTRON_RUN_AS_NODE=1` — VS Code's integrated terminal sometimes does this. That flag makes Electron boot as plain Node, so `require('electron')` returns a path string instead of the real module. Clear it:
+```powershell
+Remove-Item Env:\ELECTRON_RUN_AS_NODE
+```
+Then relaunch from that terminal.
 
-**A feature returns "403" / "no access to model."**
-Your API key is restricted. Most often it's an OpenAI **project key that only allows chat models** — it works for screen/coding help but 403s on transcription (Whisper). Fix: enable audio/Whisper on the key, use an unrestricted key, or add a Gemini key (cue falls back to it for transcription).
+**A feature returns "403" / "no access to model".**
+Your API key is restricted. Most commonly an OpenAI **project key that only allows chat models** — it works for screen/coding help but 403s on transcription (Whisper). Fix: enable audio/Whisper access on the key, use an unrestricted key, or add a Gemini key (used as the transcription fallback).
 
-**Listening does nothing / no transcript.**
-Check Settings shows a transcription-capable key (OpenAI with Whisper, or Gemini). Make sure **Let desktop apps access your microphone** is on — the top-level Microphone toggle alone isn't enough.
+**Listening does nothing / no transcript appears.**
+- Check that Settings shows a transcription-capable key (OpenAI with Whisper enabled, Groq, or Gemini).
+- Make sure **"Let desktop apps access your microphone"** is on — the top-level Microphone toggle alone is not enough.
+- If using Local mode, make sure the model is downloaded (Settings → Audio).
 
 **A Custom provider request cannot connect.**
-Confirm the Base URL includes the endpoint's `/v1` path when required, the selected model ID exists on that endpoint, and the local gateway is running. Custom provider credentials are intentionally not reused for speech-to-text.
+Confirm the Base URL includes the endpoint's `/v1` path where required, the selected model ID exists on that endpoint, and the local gateway is running.
 
 **cue shows up in my Zoom share.**
-Set Zoom's **Screen capture mode** to *"Advanced capture with window filtering"* (see Step 3).
+Set Zoom's **Screen capture mode** to **"Advanced capture with window filtering"** (see Step 5 above).
+
+**The microphone loopback warning appeared.**
+If the captured meeting audio consists of all-silent or all-identical samples (which indicates a digital loopback of your own microphone through the speakers rather than actual meeting audio), cue shows a one-time warning. Re-enable "Share audio" in the screen-share bar to restore the "Them" channel.
 
 ---
 
 ## Privacy
 
-- No cue accounts, hosted service, or telemetry. cue collects nothing.
-- Your API keys live in a local file (`cue-data.json`) and are sent only to the provider you chose.
-- When Custom is selected, its API key and LLM request data are sent to the Base URL you configured.
-- Your optional résumé text also lives in `cue-data.json` and is sent with each model request to your selected AI provider. It is stored as plain text; clear it in Settings to remove it.
-- In Local transcription mode, microphone and meeting audio stay on your computer. In cloud transcription modes, audio is sent only to the selected speech provider.
-- Audio utterances and the current transcript stay in memory; cue does not write captured audio to disk. Downloaded local model files remain on disk until you delete them.
-- Screenshots are sent to your selected chat provider only when a feature needs the screen.
+- No cue accounts, hosted service, or telemetry. **cue collects nothing.**
+- API keys live only in `cue-data.json` on your machine and are sent only to the provider you chose.
+- Profile data (résumé, job description, STAR stories) lives in `cue-data.json` and is sent with each LLM request to your selected AI provider.
+- In Local transcription mode, all audio stays on your computer. In cloud transcription modes, audio utterances are sent only to the selected STT provider.
+- Audio utterances and the transcript are kept in memory during a session. cue does not write captured audio to disk.
+- Screenshots are sent to your chat provider only when a feature explicitly needs the screen.
 
-## Contributing
+---
 
-Issues and PRs welcome. cue is intentionally small and readable — `main.js` (app + capture + AI), `renderer/` (the UI), `src/` (providers). No build step for the source (plain HTML/CSS/JS).
+## Development
+
+```bash
+npm test         # run all tests (node:test)
+npm run lint     # ESLint
+npm run pack     # build unpacked app → dist/win-unpacked/
+npm run dist:win # build NSIS installer → dist/
+CUE_NO_PROTECT=1 npm start  # dev mode: overlay is visible in screen captures
+```
+
+cue is intentionally small and readable:
+- `main.js` — Electron main process: window, IPC, capture orchestration, LLM runner
+- `renderer/` — the glass UI (HTML/CSS/JS, no framework, no build step)
+- `src/` — modular Node.js: LLM factory, STT factory, VAD, utterance segmenter, whisper session, store
+
+Tests live in `test/` and use Node's built-in `node:test` runner — no external test framework.
+
+Issues and PRs welcome.
+
+---
 
 ## Credits & license
 
-Built as an open-source study of how tools like **Cluely** and **Interview Coder** work. Modeled on the open-source clones `pickle-com/glass` and `sohzm/cheating-daddy`.
+Built as an open-source study of how tools like **Cluely** and **Interview Coder** work. Inspired by open-source clones [pickle-com/glass](https://github.com/pickle-com/glass) and [sohzm/cheating-daddy](https://github.com/sohzm/cheating-daddy).
 
 Local transcription uses [whisper.cpp](https://github.com/ggml-org/whisper.cpp), distributed under the MIT License. Its license notice is included in packaged runtimes.
 
-**License: [GPL-3.0-or-later](LICENSE).**
+**License: [GPL-3.0-or-later](LICENSE)**

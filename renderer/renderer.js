@@ -731,6 +731,24 @@
         return;
       }
       sysStream = stream;
+
+      // Detect if the loopback track becomes muted (user unchecked "Share audio" in the picker).
+      let loopbackWarningSent = false;
+      function checkLoopback() {
+        if (loopbackWarningSent) return;
+        const allMuted = !tracks.length || tracks.every(t => t.muted || !t.enabled);
+        if (allMuted) {
+          loopbackWarningSent = true;
+          cue.loopbackWarning();
+        }
+      }
+      tracks.forEach(t => {
+        t.addEventListener('mute', checkLoopback);
+        t.addEventListener('unmute', () => { loopbackWarningSent = false; });
+        t.addEventListener('ended', checkLoopback);
+      });
+      // Also check synchronously in case the track is already muted.
+      checkLoopback();
       sysCtx = new AudioContext({ sampleRate: 16000 });
       cue.log('system AudioContext sampleRate=' + sysCtx.sampleRate);
 
@@ -1529,7 +1547,7 @@
     document.querySelectorAll('#stt-provider-seg button').forEach((button) => {
       button.classList.toggle('on', button.dataset.sttProvider === (settings.sttProvider || 'auto'));
     });
-    const localWhisper = settings.localWhisper || { modelId: 'base.en', language: 'auto', threads: 0 };
+    const localWhisper = settings.localWhisper || { modelId: 'large-v3-turbo', language: 'auto', threads: 0 };
     $('#whisper-language').value = localWhisper.language || 'auto';
     $('#whisper-threads').value = Number(localWhisper.threads) || 0;
     // Audio devices — the option lists are (re)built by refreshAudioDevices();

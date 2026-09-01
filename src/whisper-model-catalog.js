@@ -1,4 +1,4 @@
-const DEFAULT_MODEL_ID = 'base.en';
+const DEFAULT_MODEL_ID = 'large-v3-turbo';
 const STANDARD_MODEL_REPOSITORY = 'ggerganov/whisper.cpp';
 const TINYDIARIZE_MODEL_REPOSITORY = 'akashmjn/tinydiarize-whisper.cpp';
 
