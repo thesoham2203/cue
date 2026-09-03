@@ -11,6 +11,8 @@
     "lint": "eslint .",
     "postinstall": "node scripts/rename-electron.js",
     "prepare:whisper": "node scripts/prepare-whisper-runtime.js",
+    "prepare:whisper:cuda12": "node scripts/prepare-whisper-runtime.js --cuda 12.4.0",
+    "prepare:whisper:cuda11": "node scripts/prepare-whisper-runtime.js --cuda 11.8.0",
     "verify:whisper-runtime": "node scripts/verify-whisper-runtime.js",
     "pack": "electron-builder --dir",
     "pack:win": "electron-builder --win --dir",

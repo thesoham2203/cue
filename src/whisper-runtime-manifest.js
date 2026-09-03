@@ -16,6 +16,25 @@ const RUNTIME_TARGETS = Object.freeze({
     sha256: '7d8be46ecd31828e1eb7a2ecdd0d6b314feafd82163038ab6092594b0a063539',
     executable: 'whisper-server.exe'
   }),
+  // CUDA 12.4 build — requires NVIDIA driver >= 551.78 on Windows.
+  // Gives 5-10x speedup over CPU on supported GPUs.
+  'win32-x64-cuda-12.4.0': Object.freeze({
+    kind: 'archive',
+    archiveType: 'zip',
+    filename: 'whisper-cublas-12.4.0-bin-x64.zip',
+    bytes: 677887125,
+    sha256: '106a2030eff8998e4ef320fe72e263a78449e9040386ee27c41ea80b001b601b',
+    executable: 'whisper-server.exe'
+  }),
+  // CUDA 11.8 build — for older NVIDIA drivers (>= 452.39).
+  'win32-x64-cuda-11.8.0': Object.freeze({
+    kind: 'archive',
+    archiveType: 'zip',
+    filename: 'whisper-cublas-11.8.0-bin-x64.zip',
+    bytes: 278557654,
+    sha256: 'aecdce0e4d4bb758a7c72a31f3f9f19a7b6d861405fd2da743cd86398633c963',
+    executable: 'whisper-server.exe'
+  }),
   'linux-x64': Object.freeze({
     kind: 'archive',
     archiveType: 'tar.gz',
@@ -45,6 +64,21 @@ function getRuntimeTarget(platform = process.platform, architecture = process.ar
   };
 }
 
+/**
+ * Get the CUDA-accelerated runtime target for a given platform and CUDA version.
+ * Returns null if no CUDA build is available for the platform.
+ */
+function getCudaRuntimeTarget(platform = process.platform, architecture = process.arch, cudaVersion = '12.4.0') {
+  const key = `${platform}-${architecture}-cuda-${cudaVersion}`;
+  const target = RUNTIME_TARGETS[key];
+  if (!target) return null;
+  return {
+    ...target,
+    key,
+    url: `${RELEASE_BASE_URL}/${target.filename}`
+  };
+}
+
 function getRuntimeExecutablePath(runtimeDirectory, platform = process.platform, architecture = process.arch) {
   return path.join(runtimeDirectory, getRuntimeTarget(platform, architecture).executable);
 }
@@ -53,5 +87,6 @@ module.exports = {
   WHISPER_CPP_VERSION,
   RUNTIME_TARGETS,
   getRuntimeTarget,
+  getCudaRuntimeTarget,
   getRuntimeExecutablePath
 };

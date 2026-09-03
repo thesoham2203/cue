@@ -25,7 +25,9 @@ test('defines runtime targets for Windows and Linux, and never for macOS', () =>
   assert.deepEqual(Object.keys(RUNTIME_TARGETS).sort(), [
     'linux-arm64',
     'linux-x64',
-    'win32-x64'
+    'win32-x64',
+    'win32-x64-cuda-11.8.0',
+    'win32-x64-cuda-12.4.0'
   ]);
   assert.equal(getRuntimeTarget('win32', 'x64').executable, 'whisper-server.exe');
   assert.equal(getRuntimeTarget('linux', 'x64').kind, 'archive');

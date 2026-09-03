@@ -54,6 +54,7 @@ class WhisperServerSession {
     language = 'auto',
     threads = 0,
     tinydiarize = false,
+    gpu = false,
     fetchImpl = global.fetch,
     spawnImpl = spawn,
     findPort = findFreeLoopbackPort,
@@ -72,6 +73,7 @@ class WhisperServerSession {
     this.language = language;
     this.threads = Number.isInteger(threads) && threads > 0 ? threads : 0;
     this.tinydiarize = tinydiarize;
+    this.gpu = gpu;
     this.fetchImpl = fetchImpl;
     this.spawnImpl = spawnImpl;
     this.findPort = findPort;
@@ -195,6 +197,9 @@ class WhisperServerSession {
     ];
     if (this.threads > 0) argumentsList.push('--threads', String(this.threads));
     if (this.tinydiarize) argumentsList.push('--tinydiarize');
+    // If GPU is explicitly disabled, pass --no-gpu (-ng).
+    // Otherwise, CUDA-compiled whisper-server automatically offloads to GPU by default.
+    if (!this.gpu) argumentsList.push('--no-gpu');
     return argumentsList;
   }
 

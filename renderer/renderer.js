@@ -30,6 +30,7 @@
   let caretEl = null;
   let responseCount = 0;
   const MAX_RESPONSES = 20;
+  let micOff = false;    // true when "Mic Off" is selected — no audio captured
 
   const messages = $('#messages');
 
@@ -615,6 +616,8 @@
     // startMic fires twice in quick succession (e.g. capture:state + a device
     // change) and spins up two AudioContexts that fight over addModule('...').
     if (micStream || micStarting) return;
+    // "Mic Off" sentinel — the user deliberately chose no microphone.
+    if (micOff) return;
     micStarting = true;
     try {
       const wantId = (settings && settings.micDeviceId) || '';
@@ -802,6 +805,7 @@
   // ---- audio device selection + pre-meeting test -------------------------
   // Fill one <select> with the devices of a given kind, keeping a "System
   // default" option first and preserving the saved choice if it still exists.
+  // For microphone selects, prepend a "Mic Off" option that silences capture.
   function populateDeviceSelect(sel, devices, kind, savedId, labelBase) {
     if (!sel) return;
     const list = devices.filter((d) => d.kind === kind);
@@ -810,6 +814,13 @@
     def.value = '';
     def.textContent = 'System default';
     sel.appendChild(def);
+    // "Mic Off" sentinel — value that cannot match any real deviceId.
+    if (kind === 'audioinput') {
+      const off = document.createElement('option');
+      off.value = '\x00mic-off\x00';
+      off.textContent = 'Mic Off';
+      sel.appendChild(off);
+    }
     list.forEach((d, i) => {
       const opt = document.createElement('option');
       opt.value = d.deviceId;
@@ -1274,7 +1285,10 @@
     el.textContent = message;
     el.classList.add('show');
     clearTimeout(statusTimer);
-    statusTimer = setTimeout(() => el.classList.remove('show'), 11000);
+    // Loading messages stay visible for up to 5 min (model loads can take that long on CPU).
+    // The 10s heartbeat in main.js keeps refreshing the message while loading continues.
+    const isLoading = message.toLowerCase().includes('loading');
+    statusTimer = setTimeout(() => el.classList.remove('show'), isLoading ? 300_000 : 11000);
   }
   cue.on('status', ({ message }) => {
     cue.log('[status] ' + message);
@@ -1558,6 +1572,8 @@
     if (micDeviceEl) micDeviceEl.value = settings.micDeviceId || '';
     if (speakerDeviceEl) speakerDeviceEl.value = settings.speakerDeviceId || '';
     if (tbMicDeviceSel) tbMicDeviceSel.value = settings.micDeviceId || '';
+    // Restore "Mic Off" sentinel flag so startMic() skips capture on next session.
+    micOff = (settings.micDeviceId || '') === '\x00mic-off\x00';
     // Profile tab
     $('#resume-text').value = settings.resumeText || '';
     $('#job-description').value = settings.jobDescription || '';
@@ -1676,7 +1692,9 @@
 
   if (micDeviceSel) micDeviceSel.addEventListener('change', () => {
     const newId = micDeviceSel.value || '';
-    if (settings) settings.micDeviceId = newId;
+    // Detect "Mic Off" sentinel and set the flag before restarting capture.
+    micOff = newId === '\x00mic-off\x00';
+    if (settings) settings.micDeviceId = micOff ? '\x00mic-off\x00' : newId;
     if (tbMicDeviceSel) tbMicDeviceSel.value = newId;
     // Apply immediately if capture is already running so the switch takes effect
     // without a stop/start cycle.
@@ -1685,17 +1703,19 @@
 
   if (tbMicDeviceSel) tbMicDeviceSel.addEventListener('change', async () => {
     const newId = tbMicDeviceSel.value || '';
-    if (settings) settings.micDeviceId = newId;
+    // Detect "Mic Off" sentinel and set the flag before restarting capture.
+    micOff = newId === '\x00mic-off\x00';
+    if (settings) settings.micDeviceId = micOff ? '\x00mic-off\x00' : newId;
     if (micDeviceSel) micDeviceSel.value = newId;
-    
+
     try {
       settings = await cue.settingsSet(settings);
     } catch (err) {
       cue.log('Error saving mic setting from toolbar: ' + err.message);
     }
-    
+
     if (micStream) { stopMic(); void startMic(); }
-    showToast('Microphone updated', 1500);
+    showToast(micOff ? 'Mic Off' : 'Microphone updated', 1500);
   });
 
   if (speakerDeviceSel) speakerDeviceSel.addEventListener('change', () => {

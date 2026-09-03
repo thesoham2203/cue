@@ -187,8 +187,45 @@ async function prepareWhisperRuntime({
   platform = process.platform,
   architecture = process.arch,
   cacheRoot = DEFAULT_CACHE_ROOT,
-  outputDirectory = null
+  outputDirectory = null,
+  cudaVersion = null
 } = {}) {
+  const { getCudaRuntimeTarget } = require('../src/whisper-runtime-manifest');
+
+  // If CUDA version requested, prepare the CUDA build
+  if (cudaVersion) {
+    const cudaTarget = getCudaRuntimeTarget(platform, architecture, cudaVersion);
+    if (!cudaTarget) {
+      throw new Error(`No CUDA ${cudaVersion} build available for ${platform}-${architecture}.`);
+    }
+    const cudaCacheDir = path.join(cacheRoot, cudaTarget.key);
+    if (!(await hasCurrentRuntime(cudaCacheDir, cudaTarget))) {
+      process.stdout.write(`Downloading CUDA ${cudaVersion} runtime (${Math.round(cudaTarget.bytes / 1024 / 1024)} MB)...\n`);
+      const temporaryDirectory = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'cue-whisper-cuda-'));
+      const preparedDirectory = path.join(temporaryDirectory, 'prepared');
+      try {
+        await prepareArchiveTarget(cudaTarget, temporaryDirectory, preparedDirectory);
+        await fs.promises.writeFile(path.join(preparedDirectory, RUNTIME_MANIFEST_FILENAME), JSON.stringify({
+          name: 'whisper.cpp',
+          version: WHISPER_CPP_VERSION,
+          target: cudaTarget.key
+        }, null, 2));
+        await replaceManagedDirectory(preparedDirectory, cudaCacheDir, cacheRoot);
+      } finally {
+        const resolvedTemporaryDirectory = path.resolve(temporaryDirectory);
+        if (resolvedTemporaryDirectory.startsWith(path.resolve(os.tmpdir()) + path.sep)) {
+          await fs.promises.rm(resolvedTemporaryDirectory, { recursive: true, force: true });
+        }
+      }
+    }
+    if (outputDirectory) {
+      const outputParent = path.dirname(path.resolve(outputDirectory));
+      await replaceManagedDirectory(cudaCacheDir, outputDirectory, outputParent);
+    }
+    return outputDirectory || cudaCacheDir;
+  }
+
+  // Standard CPU runtime
   const target = getRuntimeTarget(platform, architecture);
   const cachedRuntimeDirectory = path.join(cacheRoot, target.key);
 
@@ -220,12 +257,27 @@ async function prepareWhisperRuntime({
 
 async function main() {
   const outputDirectory = readArgument('output');
-  const runtimeDirectory = await prepareWhisperRuntime({
-    platform: readArgument('platform') || process.platform,
-    architecture: readArgument('arch') || process.arch,
+  const cudaVersion = readArgument('cuda');
+  const platform = readArgument('platform') || process.platform;
+  const architecture = readArgument('arch') || process.arch;
+
+  // Always prepare CPU runtime
+  const cpuDir = await prepareWhisperRuntime({
+    platform,
+    architecture,
     outputDirectory: outputDirectory ? path.resolve(outputDirectory) : null
   });
-  process.stdout.write(`Prepared whisper.cpp ${WHISPER_CPP_VERSION} runtime at ${runtimeDirectory}\n`);
+  process.stdout.write(`Prepared whisper.cpp ${WHISPER_CPP_VERSION} CPU runtime at ${cpuDir}\n`);
+
+  // Optionally prepare CUDA runtime too
+  if (cudaVersion) {
+    const cudaDir = await prepareWhisperRuntime({
+      platform,
+      architecture,
+      cudaVersion
+    });
+    process.stdout.write(`Prepared whisper.cpp ${WHISPER_CPP_VERSION} CUDA ${cudaVersion} runtime at ${cudaDir}\n`);
+  }
 }
 
 if (require.main === module) {

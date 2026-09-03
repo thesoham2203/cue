@@ -170,6 +170,20 @@ async function startLocalWhisper(settings) {
       throw error;
     });
 
+    // For large models on CPU-only machines the initial load can take 1–5 minutes.
+    // Send an upfront status so the user knows what is happening instead of
+    // seeing a frozen green dot with no feedback.
+    const modelMb = Math.round(model.bytes / 1024 / 1024);
+    const gpuLabel = runtime.gpu ? ` on ${runtime.gpuName || 'GPU'}` : ' on CPU';
+    send('status', { message: `Loading ${model.id} (${modelMb} MB)${gpuLabel} — this may take up to a few minutes on the first run. Transcription will begin automatically when ready.` });
+
+    // Periodic heartbeat so the UI doesn’t look frozen during a long load.
+    const loadStart = Date.now();
+    const loadHeartbeat = setInterval(() => {
+      const elapsedSec = Math.round((Date.now() - loadStart) / 1000);
+      send('status', { message: `Still loading ${model.id} (${elapsedSec}s elapsed) — please wait…` });
+    }, 10_000);
+
     transcriber = new LocalWhisperTranscriber({
       sessionOptions: {
         executablePath: runtime.executablePath,
@@ -177,9 +191,13 @@ async function startLocalWhisper(settings) {
         modelPath,
         language: model.englishOnly ? 'en' : (localSettings.language || 'auto'),
         threads: Number(localSettings.threads) || 0,
-        tinydiarize: model.tinydiarize
+        tinydiarize: model.tinydiarize,
+        gpu: !!runtime.gpu
       },
       onTranscript: publishTranscript,
+      onInterim: (channel, text) => {
+        send('stt:interim', { channel, text });
+      },
       onSpeechState: (channel, speaking, durationMs) => {
         send('vad:state', { channel, speaking, durationMs });
       },
@@ -194,7 +212,14 @@ async function startLocalWhisper(settings) {
     });
 
     localWhisperTranscriber = transcriber;
-    await transcriber.start();
+    try {
+      await transcriber.start();
+      const totalSec = Math.round((Date.now() - loadStart) / 1000);
+      const gpuInfo = runtime.gpu ? ` (GPU: ${runtime.gpuName || 'CUDA'})` : ' (CPU)';
+      send('status', { message: `${model.id} loaded in ${totalSec}s${gpuInfo} — listening now.` });
+    } finally {
+      clearInterval(loadHeartbeat);
+    }
   } catch (error) {
     if (localWhisperTranscriber === transcriber) localWhisperTranscriber = null;
     activeWhisperModelId = null;
@@ -212,7 +237,11 @@ async function getWhisperOverview() {
       available: runtime.available,
       version: runtime.version,
       target: runtime.target,
-      message: runtime.message || null
+      message: runtime.message || null,
+      gpu: !!runtime.gpu,
+      gpuName: runtime.gpuName || null,
+      vramMb: runtime.vramMb || null,
+      cudaVersion: runtime.cudaVersion || null
     },
     models
   };
@@ -429,6 +458,7 @@ function stopStreamingSTT() {
 }
 
 // -------- audio routing (streaming or batch) --------
+let _routeAudioLogCount = 0; // throttle repeated "no provider" logs
 function routeAudio(channel, pcmBuffer) {
   const buf = Buffer.from(pcmBuffer);
 
@@ -449,8 +479,12 @@ function routeAudio(channel, pcmBuffer) {
     vad[channel].processChunk(buf);
     streamingSTT[channel].sendAudio(pcmBuffer);
   } else if (!localWhisperTranscriber && !cloudBatchTranscriber && !streamingMode) {
-    // Log to help debug why audio is being silently dropped.
-    console.log('[cue] routeAudio: no active STT provider, dropping audio on channel:', channel);
+    // Throttle: only log every 200 calls (~10s at 4096-sample chunks at 16kHz) so the
+    // console isn't flooded, but the "no active STT" symptom is clearly visible.
+    if (_routeAudioLogCount++ % 200 === 0) {
+      console.log('[cue] routeAudio: no active STT provider, dropping audio on channel:', channel,
+        '| sttDisabled=', sttDisabled, 'cloudBatch=', !!cloudBatchTranscriber, 'localWhisper=', !!localWhisperTranscriber);
+    }
   }
 }
 
@@ -467,6 +501,8 @@ async function setCapturing(active) {
     vad.you.reset();
     vad.them.reset();
     const settings = store.getSettings();
+    console.log('[cue] setCapturing: sttProvider=', settings.sttProvider || 'auto',
+      'apiKeys=', JSON.stringify(Object.fromEntries(Object.entries(settings.apiKeys || {}).map(([k, v]) => [k, v ? '(set)' : '(empty)']))));
     if ((settings.sttProvider || 'auto') === 'local') {
       try {
         await startLocalWhisper(settings);
@@ -492,8 +528,10 @@ async function setCapturing(active) {
     state.capturing = true;
     // Try streaming first, fall back to batch
     const streaming = initStreamingSTT();
+    console.log('[cue] setCapturing: streaming=', streaming, 'streamingMode=', streamingMode);
     if (!streaming) {
       await startCloudBatch(settings);
+      console.log('[cue] setCapturing: cloudBatchTranscriber=', cloudBatchTranscriber ? 'created' : 'null (no keys?)');
     }
     console.log('[cue] capture started, mode:', streaming ? 'streaming' : 'batch');
     send('capture:state', { active: true, streaming: streamingMode, mode: streaming ? 'streaming' : 'batch' });
