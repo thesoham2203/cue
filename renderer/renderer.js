@@ -182,13 +182,13 @@
   // ---- Question completeness detection ----
   function isLikelyCompleteQuestion(text) {
     const trimmed = (text || '').trim();
-    
+
     // Must be substantial (not just filler words)
     if (trimmed.length < 12) return false;
-    
+
     // High confidence: ends with question mark
     if (/\?$/.test(trimmed)) return true;
-    
+
     // High confidence: behavioral interview patterns (these are complete even without ?)
     const behavioralPatterns = [
       /tell me about a time/i,
@@ -206,14 +206,14 @@
       /have you ever/i
     ];
     if (behavioralPatterns.some(p => p.test(trimmed))) return true;
-    
+
     // Medium confidence: question starters with substantial content
     const questionStarters = /^(what|how|why|when|where|who|which|tell|describe|explain|can|could|would|should|have|did|do|is|are|was|were)/i;
     if (questionStarters.test(trimmed) && trimmed.length > 25) return true;
-    
+
     // Medium confidence: ends with common question endings
     if (/(about that|for us|to us|with you|for you|about it|to share|you handle|you approach|your experience|your background)\s*$/i.test(trimmed)) return true;
-    
+
     return false;
   }
 
@@ -232,15 +232,15 @@
   function updateQuestionReadyState() {
     const text = input.value;
     const confidence = getQuestionConfidence(text);
-    
+
     // Batch the class changes to minimize repaints
     const shouldBeReady = confidence === 'high' || confidence === 'medium';
     const shouldBeAccumulating = confidence === 'accumulating';
-    
+
     // Only update if state actually changed
     const isReady = composer.classList.contains('stt-ready');
     const isAccumulating = composer.classList.contains('stt-accumulating');
-    
+
     if (shouldBeReady !== isReady || shouldBeAccumulating !== isAccumulating) {
       composer.classList.remove('stt-ready', 'stt-accumulating');
       if (shouldBeReady) {
@@ -249,18 +249,18 @@
         composer.classList.add('stt-accumulating');
       }
     }
-    
+
     updateSendButtonState(); // FIX #9: Keep send button in sync
   }
-  
+
   // FIX #9: Send button visual "ready" state
   function updateSendButtonState() {
     const sendBtn = document.getElementById('send-btn');
     if (!sendBtn) return;
-    
+
     const hasText = input.value.trim().length > 0;
     const isReady = composer.classList.contains('stt-ready');
-    
+
     sendBtn.classList.toggle('ready', hasText && isReady);
     sendBtn.classList.toggle('has-text', hasText);
   }
@@ -268,32 +268,32 @@
   // ---- Save question to history for undo ----
   function saveToQuestionHistory(text) {
     if (!text || text.trim().length < 5) return;
-    
+
     // Don't save duplicates
     const last = questionHistory[questionHistory.length - 1];
     if (last && last.text === text.trim()) return;
-    
+
     questionHistory.push({
       text: text.trim(),
       timestamp: Date.now()
     });
-    
+
     // Keep only recent history
     while (questionHistory.length > MAX_QUESTION_HISTORY) {
       questionHistory.shift();
     }
-    
+
     updateHistoryBadge(); // FIX #14: Update badge when history changes
   }
-  
+
   // FIX #14: History button badge showing count
   function updateHistoryBadge() {
     const historyBtn = document.getElementById('history-btn');
     if (!historyBtn) return;
-    
+
     // Remove existing badge if any
     let badge = historyBtn.querySelector('.history-badge');
-    
+
     const count = questionHistory.length;
     if (count > 0) {
       if (!badge) {
@@ -374,7 +374,7 @@
     // When the user speaks (You channel), don't immediately clear
     // Instead, dim the input and wait — they might just be acknowledging
     if (!inputFromSTT) return;
-    
+
     // FIX #3: Reset userSpeechStart at the beginning before setting new timestamp
     // This ensures we always track from fresh when a new soft-clear cycle begins
     const now = Date.now();
@@ -384,7 +384,7 @@
 
     // Dim the input to show it's in "pending clear" state
     composer.classList.add('stt-dimmed');
-    
+
     // Clear the finalization timer (user is responding)
     clearTimeout(questionFinalizeTimer);
 
@@ -425,7 +425,7 @@
     syncPlaceholder();
     updateSendButtonState(); // FIX #9
     updateHistoryBadge(); // FIX #14
-    
+
     // FIX #10: Show undo hint when explicitly cleared
     if (showUndoHint && hadContent) {
       const undoHint = 'Ctrl+Z to undo';
@@ -446,23 +446,23 @@
     input.style.height = 'auto';
     input.style.height = Math.min(input.scrollHeight, 140) + 'px';
   }
-  
+
   // FIX #6: Track last STT value to detect substantial edits vs minor corrections
   let lastSTTValue = '';
-  
+
   input.addEventListener('input', () => {
     const currentValue = input.value;
-    
+
     // FIX #5: Clear interim text when user starts typing
     clearInputInterim();
-    
+
     // FIX #6: Only detach from STT mode if edit is substantial
     // Minor corrections (typo fixes, small additions) should keep STT mode
     if (inputFromSTT && lastSTTValue) {
       const lengthDiff = Math.abs(currentValue.length - lastSTTValue.length);
       const isCleared = currentValue.trim().length === 0;
       const isSubstantialChange = lengthDiff > lastSTTValue.length * 0.3 || isCleared;
-      
+
       if (isSubstantialChange) {
         // User made a major change — detach from STT mode
         saveToQuestionHistory(lastSTTValue);
@@ -477,7 +477,7 @@
       // User typing from scratch — standard behavior
       composer.classList.remove('stt-filling', 'stt-dimmed', 'stt-ready', 'stt-accumulating');
     }
-    
+
     syncPlaceholder();
     updateSendButtonState(); // FIX #9: Update send button on input change
   });
@@ -489,10 +489,10 @@
     const text = input.value.trim();
     if (!text) { runMode('assist', ''); return; }
     const wasFromSTT = inputFromSTT;
-    
+
     // Save to history before clearing (in case user wants to redo)
     saveToQuestionHistory(text);
-    
+
     input.value = '';
     inputFromSTT = false;
     lastSTTValue = ''; // FIX #6: Clear tracked STT value
@@ -503,7 +503,7 @@
     clearTimeout(sttFillTimer);
     syncPlaceholder();
     updateSendButtonState(); // FIX #9
-    
+
     // If text came from STT (interviewer question), use answerThis mode
     // Otherwise use ask mode (user typed their own question)
     runMode(wasFromSTT ? 'answerThis' : 'ask', text);
@@ -525,7 +525,7 @@
     if (e.key === 'Enter' && !e.shiftKey && !e.metaKey && !e.ctrlKey) { e.preventDefault(); send(); }
     if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); runMode('assist', ''); }
   });
-  
+
   // FIX #13: Global keyboard shortcut for force-answer (Ctrl+Shift+A / Cmd+Shift+A)
   document.addEventListener('keydown', (e) => {
     // Ctrl+Shift+A / Cmd+Shift+A: Force answer current question immediately
@@ -541,7 +541,7 @@
       }
     }
   });
-  
+
   // FIX #4: Add tooltip with keyboard shortcuts to send button
   const sendBtn = document.getElementById('send-btn');
   if (sendBtn) {
@@ -592,7 +592,7 @@
     clearTranscriptBtn.addEventListener('click', async () => {
       // Save current input to history before clearing (for undo)
       saveToQuestionHistory(input.value);
-      
+
       await cue.clearTranscript();
       clearMessages();
       // Also clear the floating interim bar
@@ -603,7 +603,7 @@
       transcriptInterimEl = null;
       clearTranscriptSidebar(); // clear the history sidebar too
       hardClearSTTFill(); // clear the input box too
-      
+
       const undoHint = 'Ctrl+Z to undo';
       showToast(`Transcript cleared · ${undoHint}`, 3500);
     });
@@ -921,9 +921,9 @@
     dot.classList.remove('off', 'idle', 'speaking', 'transcribing');
     dot.classList.add(dotState);
     const labels = {
-      off:          'Not listening',
-      idle:         'Listening — silence detected',
-      speaking:     'Speech detected',
+      off: 'Not listening',
+      idle: 'Listening — silence detected',
+      speaking: 'Speech detected',
       transcribing: 'Transcribing…'
     };
     dot.title = labels[dotState] || '';
@@ -1153,7 +1153,7 @@
       inputInterimEl.style.display = 'none';
     }
   }
-  
+
   cue.on('stt:interim', ({ channel, text }) => {
     setLiveDotState('transcribing');
     const el = getOrCreateInterimEl();
@@ -1161,7 +1161,7 @@
     el.textContent = `${label}: ${text}`;
     el.classList.add('show');
     appendTranscriptHistoryTurn(channel, text, true); // update sidebar interim
-    
+
     // FIX #12: Show interviewer's interim speech in input area
     if (channel === 'them' && !input.value.trim()) {
       showInterimInInput(text);
@@ -1322,10 +1322,10 @@
   function updatePrepStatus() {
     if (!settings) return;
     const fields = {
-      resume:  !!(settings.resumeText && settings.resumeText.trim()),
-      jd:      !!(settings.jobDescription && settings.jobDescription.trim()),
+      resume: !!(settings.resumeText && settings.resumeText.trim()),
+      jd: !!(settings.jobDescription && settings.jobDescription.trim()),
       stories: !!(settings.starStories && settings.starStories.trim()),
-      salary:  !!(settings.salaryTarget && settings.salaryTarget.trim())
+      salary: !!(settings.salaryTarget && settings.salaryTarget.trim())
     };
     document.querySelectorAll('#prep-status .prep-item').forEach((el) => {
       const loaded = fields[el.dataset.field];
@@ -1355,8 +1355,8 @@
     banner.className = 'show';
     banner.innerHTML =
       '<div class="mic-perm-text">' +
-        '<strong>🎙️ Microphone access required</strong><br>' +
-        'cue needs microphone permission to hear you during calls. Allow it in Windows Settings → Privacy &amp; security → Microphone, then restart cue.' +
+      '<strong>🎙️ Microphone access required</strong><br>' +
+      'cue needs microphone permission to hear you during calls. Allow it in Windows Settings → Privacy &amp; security → Microphone, then restart cue.' +
       '</div>' +
       '<div class="mic-perm-actions"></div>';
     const actions = banner.querySelector('.mic-perm-actions');
